@@ -300,6 +300,9 @@ class PortfolioApp {
       groupNames_: saved.groupNames_ || {},
       newSectionDraft: "",
       newSectionError: "",
+      customAccounts: saved.customAccounts || [],
+      deletedAccounts: saved.deletedAccounts || {},
+      accountDraft: { name: "", kind: "", error: "" },
       apiKey: saved.apiKey || "",
       keyDraft: saved.apiKey || "",
       lastRefresh: saved.lastRefresh || "",
@@ -343,7 +346,8 @@ class PortfolioApp {
       live: this.state.live, pinned: this.state.pinned, auto: this.state.auto, intervalMs: this.state.intervalMs,
       feedStatus: this.state.feedStatus, lastRefresh: this.state.lastRefresh, apiKey: this.state.apiKey,
       theme: this.state.theme, custom: this.state.custom, extraGroups: this.state.extraGroups,
-      groupNames_: this.state.groupNames_, at: at
+      groupNames_: this.state.groupNames_, customAccounts: this.state.customAccounts,
+      deletedAccounts: this.state.deletedAccounts, at: at
     };
     try { localStorage.setItem(KEY, JSON.stringify(payload)); } catch (e) {}
     this.state.savedAt = at;
@@ -507,6 +511,39 @@ class PortfolioApp {
       }, 1100);
     }
   }
+  effectiveAccounts() {
+    const seedAccts = ACCOUNTS.filter(a => !this.state.deletedAccounts[a[0]]);
+    const customAccts = this.state.customAccounts.map(a => [a.id, a.name, a.kind]);
+    return seedAccts.concat(customAccts);
+  }
+  accountDraftChange(field, text) {
+    this.state.accountDraft = Object.assign({}, this.state.accountDraft, { [field]: text, error: "" });
+    this.render();
+  }
+  addAccount() {
+    const draft = this.state.accountDraft;
+    const name = (draft.name || "").trim();
+    const kind = (draft.kind || "").trim();
+    if (!name) { this.state.accountDraft = Object.assign({}, draft, { error: "Give the account a name." }); this.render(); return; }
+    const existingIds = this.effectiveAccounts().map(a => a[0]);
+    let base = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "account";
+    let id = base, n = 2;
+    while (existingIds.indexOf(id) > -1) { id = base + "-" + n; n++; }
+    this.state.customAccounts = this.state.customAccounts.concat([{ id, name, kind: kind || "Manual entry" }]);
+    this.state.connected[id] = true;
+    this.state.accountDraft = { name: "", kind: "", error: "" };
+    this.persist(); this.render();
+  }
+  deleteAccount(id) {
+    const isCustom = this.state.customAccounts.some(a => a.id === id);
+    if (isCustom) {
+      this.state.customAccounts = this.state.customAccounts.filter(a => a.id !== id);
+    } else {
+      this.state.deletedAccounts[id] = true;
+    }
+    this.persist(); this.render();
+  }
+  restoreDeletedAccounts() { this.state.deletedAccounts = {}; this.persist(); this.render(); }
   setTheme(mode) { this.state.theme = mode; this.persist(); this.render(); }
   resetPrices() {
     try { localStorage.removeItem(KEY); } catch (e) {}
@@ -514,7 +551,8 @@ class PortfolioApp {
       prices: Object.assign({}, this.seedPrices), connected: Object.assign({}, this.defaultConn),
       synced: {}, imported: [], custom: [], edits: {}, deleted: {}, drafts: {}, groupDrafts: {},
       extraGroups: [], groupNames_: {}, savedAt: "—", preview: null, importStatus: "",
-      live: {}, pinned: {}, feedStatus: {}, lastRefresh: ""
+      live: {}, pinned: {}, feedStatus: {}, lastRefresh: "",
+      customAccounts: [], deletedAccounts: {}, accountDraft: { name: "", kind: "", error: "" }
     });
     this.render();
   }
@@ -694,7 +732,8 @@ class PortfolioApp {
       };
     });
 
-    const accounts = ACCOUNTS.map(a => {
+    const accountsRaw = this.effectiveAccounts();
+    const accounts = accountsRaw.map(a => {
       const [id, name, kind] = a;
       const mine = all.filter(l => l.acct === id);
       const heldLots = mine.filter(l => l.qty > 0);
@@ -745,7 +784,7 @@ class PortfolioApp {
       totalReturn: totalCost ? (totalPl / totalCost * 100).toFixed(1) + "%" : "—",
       totalPlClass: plClass(totalPl),
       lotCount: counted.filter(l => l.qty > 0).length,
-      connectedCount: ACCOUNTS.filter(a => conn[a[0]]).length,
+      connectedCount: accountsRaw.filter(a => conn[a[0]]).length,
       savedAt: this.state.savedAt,
       watchlistOn: this.state.watchlist,
       autoOn: this.state.auto,
@@ -791,6 +830,9 @@ class PortfolioApp {
       newSectionError: this.state.newSectionError,
       hasDeleted: Object.keys(deleted).length > 0,
       deletedLabel: Object.keys(deleted).length + " position" + (Object.keys(deleted).length === 1 ? "" : "s"),
+      accountDraft: this.state.accountDraft,
+      hasDeletedAccounts: Object.keys(this.state.deletedAccounts).length > 0,
+      deletedAccountsLabel: Object.keys(this.state.deletedAccounts).length + " account" + (Object.keys(this.state.deletedAccounts).length === 1 ? "" : "s"),
       importStatus: this.state.importStatus,
       importError: this.state.importError,
       hasPreview: pv.length > 0,
@@ -832,7 +874,10 @@ function template(vm) {
             <span class="account-name">${esc(a.name)}</span>
             <span class="account-kind">${esc(a.kind)}</span>
           </div>
-          <span class="status ${a.statusClass}"><span class="dot"></span>${a.statusLabel}</span>
+          <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">
+            <span class="status ${a.statusClass}"><span class="dot"></span>${a.statusLabel}</span>
+            <button class="del-btn" title="Remove this account" data-action="delete-account" data-id="${escAttr(a.id)}">×</button>
+          </div>
         </div>
         <div class="account-value-row">
           <span class="account-value mono">${a.value}</span>
@@ -844,6 +889,17 @@ function template(vm) {
         </div>
       </div>`).join("")}
     </div>
+    <div class="add-row">
+      <input type="text" class="field add-ticker" style="flex:0 1 200px;text-transform:none;" value="${escAttr(vm.accountDraft.name)}" placeholder="Account name" data-action="account-draft-name">
+      <input type="text" class="field add-ticker" style="flex:0 1 220px;text-transform:none;" value="${escAttr(vm.accountDraft.kind)}" placeholder="Kind (optional)" data-action="account-draft-kind">
+      <button class="btn-gold" data-action="add-account">+ Add account</button>
+      ${vm.accountDraft.error ? `<span class="error-text" style="flex-basis:100%;margin-top:0;">${esc(vm.accountDraft.error)}</span>` : ""}
+    </div>
+    ${vm.hasDeletedAccounts ? `
+    <div class="deleted-bar">
+      <span>${esc(vm.deletedAccountsLabel)} removed.</span>
+      <button class="btn-danger" data-action="restore-accounts">Restore all</button>
+    </div>` : ""}
     <div class="max-note">Live brokerage and wallet links are not wired up in this prototype — connecting simulates a sync and pulls in the positions already on file for that account. Use <strong>Import a file</strong> below to load real balances.</div>
   </section>
 
@@ -1040,6 +1096,9 @@ PortfolioApp.prototype.attachEvents = function () {
       case "set-theme": this.setTheme(el.dataset.mode); break;
       case "reset-prices": this.resetPrices(); break;
       case "toggle-account": this.toggleAccount(el.dataset.id); break;
+      case "delete-account": this.deleteAccount(el.dataset.id); break;
+      case "add-account": this.addAccount(); break;
+      case "restore-accounts": this.restoreDeletedAccounts(); break;
       case "set-interval": this.setInterval_(parseInt(el.dataset.ms, 10)); break;
       case "refresh-now": this.refresh(); break;
       case "save-key": this.saveKey(); break;
@@ -1062,6 +1121,8 @@ PortfolioApp.prototype.attachEvents = function () {
     switch (action) {
       case "toggle-auto": this.toggleAuto(); break;
       case "toggle-watchlist": this.toggleWatchlist(); break;
+      case "account-draft-name": this.accountDraftChange("name", el.value); break;
+      case "account-draft-kind": this.accountDraftChange("kind", el.value); break;
       case "key-draft": this.onKeyDraftChange(el.value); break;
       case "new-section-draft": this.onNewSectionDraftChange(el.value); break;
       case "rename-group": this.renameGroup(el.dataset.group, el.value); break;
