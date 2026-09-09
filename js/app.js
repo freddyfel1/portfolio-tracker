@@ -766,7 +766,7 @@ class PortfolioApp {
           ticker: l.ticker,
           sub: l.sub + (l.has ? "" : " · needs price") + (l.edited ? " · edited" : ""),
           qtyInput: this.state.drafts["q" + l.key] !== undefined ? this.state.drafts["q" + l.key] : qtyFmt(l.qty),
-          buyInput: this.state.drafts["b" + l.key] !== undefined ? this.state.drafts["b" + l.key] : (l.buy ? priceFmt(l.buy) : ""),
+          buyInput: this.state.drafts["b" + l.key] !== undefined ? this.state.drafts["b" + l.key] : (l.buy ? priceMoney(l.buy) : ""),
           cost: l.cost ? money(l.cost) : "—",
           priceInput: this.state.drafts[l.ticker] !== undefined ? this.state.drafts[l.ticker] : priceMoney(l.price),
           priceClass: l.usingFeed ? "live" : (l.pinned ? "pinned" : ""),
@@ -1082,7 +1082,7 @@ function template(vm) {
     </div>
 
     <div class="cols col-head">
-      <div>Asset</div><div class="right">Qty</div><div class="right">Buy</div><div class="right">Cost</div>
+      <div>Asset</div><div class="right">Qty</div><div class="right">Buy Price</div><div class="right">Cost</div>
       <div class="right">Price now</div><div class="right">Value</div><div class="right">P/L</div><div class="right">Return</div><div style="text-align:center;">Del</div>
     </div>
 
