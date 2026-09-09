@@ -298,6 +298,7 @@ class PortfolioApp {
       groupDrafts: {},
       extraGroups: saved.extraGroups || [],
       groupNames_: saved.groupNames_ || {},
+      groupOrder: saved.groupOrder || [],
       newSectionDraft: "",
       newSectionError: "",
       customAccounts: saved.customAccounts || [],
@@ -348,7 +349,7 @@ class PortfolioApp {
       feedStatus: this.state.feedStatus, lastRefresh: this.state.lastRefresh, apiKey: this.state.apiKey,
       theme: this.state.theme, custom: this.state.custom, extraGroups: this.state.extraGroups,
       groupNames_: this.state.groupNames_, customAccounts: this.state.customAccounts,
-      deletedAccounts: this.state.deletedAccounts, at: at
+      deletedAccounts: this.state.deletedAccounts, groupOrder: this.state.groupOrder, at: at
     };
     try { localStorage.setItem(KEY, JSON.stringify(payload)); } catch (e) {}
     this.state.savedAt = at;
@@ -555,7 +556,7 @@ class PortfolioApp {
       extraGroups: [], groupNames_: {}, savedAt: "—", preview: null, importStatus: "",
       live: {}, pinned: {}, feedStatus: {}, lastRefresh: "",
       customAccounts: [], deletedAccounts: {}, accountDraft: { name: "", kind: "", error: "" },
-      showRestoreBar: false
+      showRestoreBar: false, groupOrder: []
     });
     this.render();
   }
@@ -620,6 +621,32 @@ class PortfolioApp {
       this.restoreBarTimer = null;
       this.render();
     }, 10000);
+  }
+  orderedGroupNames(groupNames) {
+    const order = this.state.groupOrder || [];
+    const known = order.filter(g => groupNames.indexOf(g) > -1);
+    const extra = groupNames.filter(g => known.indexOf(g) < 0);
+    return known.concat(extra);
+  }
+  discoverGroupNames() {
+    const deleted = this.state.deleted;
+    const entries = SEED.map((r, n) => [r[0], "s" + n])
+      .concat(this.state.imported.map((l, n) => ["Imported — " + l.file, "i" + n]))
+      .concat(this.state.custom.map((l, n) => [l.group, "c" + n]));
+    const names = [];
+    entries.forEach(([g, key]) => { if (!deleted[key] && names.indexOf(g) < 0) names.push(g); });
+    this.state.extraGroups.forEach(g => { if (names.indexOf(g) < 0) names.push(g); });
+    return names;
+  }
+  moveGroup(name, dir) {
+    const orderedNames = this.orderedGroupNames(this.discoverGroupNames());
+    const idx = orderedNames.indexOf(name);
+    const swapIdx = idx + dir;
+    if (idx < 0 || swapIdx < 0 || swapIdx >= orderedNames.length) return;
+    const next = orderedNames.slice();
+    const tmp = next[idx]; next[idx] = next[swapIdx]; next[swapIdx] = tmp;
+    this.state.groupOrder = next;
+    this.persist(); this.render();
   }
   renameGroup(group, text) {
     if (text.trim()) this.state.groupNames_[group] = text;
@@ -690,13 +717,14 @@ class PortfolioApp {
     const groupNames = [];
     all.forEach(l => { if (groupNames.indexOf(l.group) < 0) groupNames.push(l.group); });
     this.state.extraGroups.forEach(g => { if (groupNames.indexOf(g) < 0) groupNames.push(g); });
+    const orderedNames = this.orderedGroupNames(groupNames);
 
     const counted = all.filter(l => !isWatch(l.group) && l.live);
     const totalCost = counted.reduce((a, l) => a + l.cost, 0);
     const totalValue = counted.reduce((a, l) => a + (l.value || 0), 0);
     const totalPl = totalValue - totalCost;
 
-    const allocation = groupNames.filter(g => !isWatch(g)).map(g => {
+    const allocation = orderedNames.filter(g => !isWatch(g)).map(g => {
       const v = counted.filter(l => l.group === g).reduce((a, l) => a + (l.value || 0), 0);
       return {
         name: g.replace("Crypto — ", "").replace("Stocks — ", "Linqto ").replace(/^Imported — /, "Imported: "),
@@ -706,11 +734,12 @@ class PortfolioApp {
       };
     }).filter(s => s.grow > 1);
 
-    const groups = groupNames.filter(g => {
+    const groups = orderedNames.filter(g => {
       if (isWatch(g) && !this.state.watchlist) return false;
       if (this.state.group !== "All" && g !== this.state.group) return false;
       return true;
     }).map(g => {
+      const orderIdx = orderedNames.indexOf(g);
       const gl = all.filter(l => l.group === g && (isWatch(g) || l.cost >= dust || (l.value || 0) >= dust));
       const c = gl.reduce((a, l) => a + l.cost, 0);
       const v = gl.reduce((a, l) => a + (l.value || 0), 0);
@@ -725,6 +754,7 @@ class PortfolioApp {
       return {
         name: g, displayName: displayName,
         shortName: displayName.replace(/^(Crypto|Stocks|Watchlist|Imported)\s*[—-]\s*/, ""),
+        canMoveUp: orderIdx > 0, canMoveDown: orderIdx < orderedNames.length - 1,
         color: GROUP_COLORS[g] || IMPORT_COLOR, note: note, draft: gd,
         opacity: offline === gl.length && gl.length ? 0.45 : 1,
         cost: money(c), value: money(v),
@@ -770,7 +800,7 @@ class PortfolioApp {
       };
     });
 
-    const filters = ["All"].concat(groupNames.filter(g => !isWatch(g))).map(label => ({
+    const filters = ["All"].concat(orderedNames.filter(g => !isWatch(g))).map(label => ({
       label: label === "All" ? "All holdings" : label,
       group: label,
       active: this.state.group === label
@@ -1036,6 +1066,10 @@ function template(vm) {
   <section class="group" style="opacity:${group.opacity};">
     <div class="group-head">
       <div class="group-head-left">
+        <div class="move-btns">
+          <button class="move-btn" title="Move section up" data-action="move-group-up" data-group="${escAttr(group.name)}" ${group.canMoveUp ? "" : "disabled"}>▲</button>
+          <button class="move-btn" title="Move section down" data-action="move-group-down" data-group="${escAttr(group.name)}" ${group.canMoveDown ? "" : "disabled"}>▼</button>
+        </div>
         <span class="swatch" style="background:${group.color};"></span>
         <input type="text" class="group-rename" value="${escAttr(group.displayName)}" data-action="rename-group" data-group="${escAttr(group.name)}">
         <span class="group-note">${esc(group.note)}</span>
@@ -1128,6 +1162,8 @@ PortfolioApp.prototype.attachEvents = function () {
       case "restore-deleted": this.restoreDeleted(); break;
       case "delete-row": this.deleteRow(el.dataset.key); break;
       case "draft-add": this.groupDraftAdd(el.dataset.group); break;
+      case "move-group-up": this.moveGroup(el.dataset.group, -1); break;
+      case "move-group-down": this.moveGroup(el.dataset.group, 1); break;
     }
   });
 

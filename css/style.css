@@ -167,6 +167,10 @@ section { display: flex; flex-direction: column; gap: 14px; }
 .group-rename { font-size: 15px; font-weight: 600; letter-spacing: -0.01em; background: transparent; border: 1px solid transparent; border-radius: 3px; padding: 3px 6px; margin: -3px -6px; color: var(--text); width: 220px; }
 .group-rename:hover { border-color: var(--borderMid); }
 .group-note { font-family: 'IBM Plex Mono', monospace; font-size: 11px; color: var(--textMute); }
+.move-btns { display: flex; flex-direction: column; gap: 2px; }
+.move-btn { width: 18px; height: 13px; display: flex; align-items: center; justify-content: center; font-size: 8px; line-height: 1; border-radius: 2px; cursor: pointer; border: 1px solid var(--borderSoft); background: transparent; color: var(--textFaint); }
+.move-btn:hover:not(:disabled) { border-color: var(--borderStrong); color: var(--text); }
+.move-btn:disabled { opacity: 0.3; cursor: default; }
 .group-stats { display: flex; gap: 22px; font-family: 'IBM Plex Mono', monospace; font-size: 12px; }
 .group-stats .cost { color: var(--textMute); }
 .group-stats .value { color: var(--textStrong); }
