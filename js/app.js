@@ -753,7 +753,7 @@ class PortfolioApp {
     this.state.extraGroups.forEach(g => { if (groupNames.indexOf(g) < 0) groupNames.push(g); });
     const orderedNames = this.orderedGroupNames(groupNames);
 
-    const counted = all.filter(l => !isWatch(l.group) && l.live);
+    const counted = all.filter(l => !isWatch(l.group));
     const totalCost = counted.reduce((a, l) => a + l.cost, 0);
     const totalValue = counted.reduce((a, l) => a + (l.value || 0), 0);
     const totalPl = totalValue - totalCost;
@@ -782,10 +782,8 @@ class PortfolioApp {
       const v = gl.reduce((a, l) => a + (l.value || 0), 0);
       const p = v - c;
       const missing = gl.filter(l => !l.has).length;
-      const offline = gl.filter(l => !l.live).length;
       let note = gl.length + " lot" + (gl.length === 1 ? "" : "s");
       if (missing) note += " · " + missing + " needs price";
-      if (offline === gl.length && gl.length) note += " · account disconnected";
       const gd = Object.assign({ ticker: "", qty: "", buy: "", price: "", error: "" }, this.state.groupDrafts[g]);
       const displayName = this.state.groupNames_[g] || g;
       return {
@@ -793,7 +791,6 @@ class PortfolioApp {
         shortName: displayName.replace(/^(Crypto|Stocks|Watchlist|Imported)\s*[—-]\s*/, ""),
         canMoveUp: orderIdx > 0, canMoveDown: orderIdx < orderedNames.length - 1,
         color: GROUP_COLORS[g] || IMPORT_COLOR, note: note, draft: gd,
-        opacity: offline === gl.length && gl.length ? 0.45 : 1,
         cost: money(c), value: money(v),
         pl: isWatch(g) ? "—" : signed(p),
         ret: isWatch(g) || !c ? "—" : (p / c * 100).toFixed(1) + "%",
@@ -1110,7 +1107,7 @@ function template(vm) {
   ${vm.noGroupsMessage ? `<div class="hint" style="padding:14px 0;">${esc(vm.noGroupsMessage)}</div>` : ""}
 
   ${vm.groups.map(group => `
-  <section class="group" style="opacity:${group.opacity};">
+  <section class="group">
     <div class="group-head">
       <div class="group-head-left">
         <div class="move-btns">
