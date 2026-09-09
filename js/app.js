@@ -313,6 +313,7 @@ class PortfolioApp {
       group: "All",
       tickerSearch: "",
       watchlist: false,
+      hideZero: false,
       drafts: {},
       syncing: {},
       dragging: false,
@@ -639,6 +640,7 @@ class PortfolioApp {
     this.persist(); this.render();
   }
   toggleWatchlist() { this.state.watchlist = !this.state.watchlist; this.render(); }
+  toggleHideZero() { this.state.hideZero = !this.state.hideZero; this.render(); }
   restoreDeleted() {
     this.state.deleted = {};
     this.state.showRestoreBar = false;
@@ -774,7 +776,8 @@ class PortfolioApp {
     }).map(g => {
       const orderIdx = orderedNames.indexOf(g);
       const gl = all.filter(l => l.group === g && (isWatch(g) || l.cost >= dust || (l.value || 0) >= dust))
-        .filter(l => !search || l.ticker.toUpperCase().indexOf(search) > -1);
+        .filter(l => !search || l.ticker.toUpperCase().indexOf(search) > -1)
+        .filter(l => isWatch(g) || !this.state.hideZero || l.qty > 0);
       const c = gl.reduce((a, l) => a + l.cost, 0);
       const v = gl.reduce((a, l) => a + (l.value || 0), 0);
       const p = v - c;
@@ -811,7 +814,7 @@ class PortfolioApp {
           plClass: l.qty && l.has ? plClass(l.pl) : "pl-flat"
         }))
       };
-    }).filter(gr => !search || gr.rows.length > 0);
+    }).filter(gr => (!search && !this.state.hideZero) || gr.rows.length > 0);
 
     const accountsRaw = this.effectiveAccounts();
     const accounts = accountsRaw.map(a => {
@@ -868,6 +871,7 @@ class PortfolioApp {
       connectedCount: accountsRaw.filter(a => conn[a[0]]).length,
       savedAt: this.state.savedAt,
       watchlistOn: this.state.watchlist,
+      hideZeroOn: this.state.hideZero,
       autoOn: this.state.auto,
       intervalMs: this.state.intervalMs,
       intervals: [["30s", 30000], ["1m", 60000], ["5m", 300000], ["15m", 900000]].map(iv => ({
@@ -912,7 +916,7 @@ class PortfolioApp {
       hasDeleted: this.state.showRestoreBar && Object.keys(deleted).length > 0,
       deletedLabel: Object.keys(deleted).length + " position" + (Object.keys(deleted).length === 1 ? "" : "s"),
       tickerSearch: this.state.tickerSearch,
-      noSearchMatches: !!search && groups.length === 0,
+      noGroupsMessage: groups.length > 0 ? "" : (search ? "No tickers match “" + this.state.tickerSearch.trim() + "”." : (this.state.hideZero ? "No positions with a balance to show." : "")),
       accountDraft: this.state.accountDraft,
       hasDeletedAccounts: this.state.showAccountRestoreBar && Object.keys(this.state.deletedAccounts).length > 0,
       deletedAccountsLabel: Object.keys(this.state.deletedAccounts).length + " account" + (Object.keys(this.state.deletedAccounts).length === 1 ? "" : "s"),
@@ -1090,6 +1094,10 @@ function template(vm) {
       <input type="checkbox" ${vm.watchlistOn ? "checked" : ""} data-action="toggle-watchlist">
       Show watchlist (0 qty)
     </label>
+    <label class="checkbox-label">
+      <input type="checkbox" ${vm.hideZeroOn ? "checked" : ""} data-action="toggle-hide-zero">
+      Hide zero-balance positions
+    </label>
   </section>
   ${vm.newSectionError ? `<div class="error-text">${esc(vm.newSectionError)}</div>` : ""}
 
@@ -1099,7 +1107,7 @@ function template(vm) {
     <button class="btn-danger" data-action="restore-deleted">Restore all</button>
   </div>` : ""}
 
-  ${vm.noSearchMatches ? `<div class="hint" style="padding:14px 0;">No tickers match “${esc(vm.tickerSearch)}”.</div>` : ""}
+  ${vm.noGroupsMessage ? `<div class="hint" style="padding:14px 0;">${esc(vm.noGroupsMessage)}</div>` : ""}
 
   ${vm.groups.map(group => `
   <section class="group" style="opacity:${group.opacity};">
@@ -1213,6 +1221,7 @@ PortfolioApp.prototype.attachEvents = function () {
     switch (action) {
       case "toggle-auto": this.toggleAuto(); break;
       case "toggle-watchlist": this.toggleWatchlist(); break;
+      case "toggle-hide-zero": this.toggleHideZero(); break;
       case "account-draft-name": this.accountDraftChange("name", el.value); break;
       case "account-draft-kind": this.accountDraftChange("kind", el.value); break;
       case "key-draft": this.onKeyDraftChange(el.value); break;
