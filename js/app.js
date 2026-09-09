@@ -303,6 +303,7 @@ class PortfolioApp {
       customAccounts: saved.customAccounts || [],
       deletedAccounts: saved.deletedAccounts || {},
       accountDraft: { name: "", kind: "", error: "" },
+      showRestoreBar: false,
       apiKey: saved.apiKey || "",
       keyDraft: saved.apiKey || "",
       lastRefresh: saved.lastRefresh || "",
@@ -547,12 +548,14 @@ class PortfolioApp {
   setTheme(mode) { this.state.theme = mode; this.persist(); this.render(); }
   resetPrices() {
     try { localStorage.removeItem(KEY); } catch (e) {}
+    if (this.restoreBarTimer) { clearTimeout(this.restoreBarTimer); this.restoreBarTimer = null; }
     this.state = Object.assign({}, this.state, {
       prices: Object.assign({}, this.seedPrices), connected: Object.assign({}, this.defaultConn),
       synced: {}, imported: [], custom: [], edits: {}, deleted: {}, drafts: {}, groupDrafts: {},
       extraGroups: [], groupNames_: {}, savedAt: "—", preview: null, importStatus: "",
       live: {}, pinned: {}, feedStatus: {}, lastRefresh: "",
-      customAccounts: [], deletedAccounts: {}, accountDraft: { name: "", kind: "", error: "" }
+      customAccounts: [], deletedAccounts: {}, accountDraft: { name: "", kind: "", error: "" },
+      showRestoreBar: false
     });
     this.render();
   }
@@ -603,7 +606,21 @@ class PortfolioApp {
     this.persist(); this.render();
   }
   toggleWatchlist() { this.state.watchlist = !this.state.watchlist; this.render(); }
-  restoreDeleted() { this.state.deleted = {}; this.persist(); this.render(); }
+  restoreDeleted() {
+    this.state.deleted = {};
+    this.state.showRestoreBar = false;
+    if (this.restoreBarTimer) { clearTimeout(this.restoreBarTimer); this.restoreBarTimer = null; }
+    this.persist(); this.render();
+  }
+  armRestoreBar() {
+    this.state.showRestoreBar = true;
+    if (this.restoreBarTimer) clearTimeout(this.restoreBarTimer);
+    this.restoreBarTimer = setTimeout(() => {
+      this.state.showRestoreBar = false;
+      this.restoreBarTimer = null;
+      this.render();
+    }, 10000);
+  }
   renameGroup(group, text) {
     if (text.trim()) this.state.groupNames_[group] = text;
     else delete this.state.groupNames_[group];
@@ -621,7 +638,7 @@ class PortfolioApp {
     }
     this.render();
   }
-  deleteRow(key) { this.state.deleted[key] = true; this.persist(); this.render(); }
+  deleteRow(key) { this.state.deleted[key] = true; this.armRestoreBar(); this.persist(); this.render(); }
   groupDraftChange(group, field, text) {
     const gd = Object.assign({ ticker: "", qty: "", buy: "", price: "", error: "" }, this.state.groupDrafts[group]);
     gd[field] = text;
@@ -828,7 +845,7 @@ class PortfolioApp {
       pinnedLabel: pinnedList.length + " ticker" + (pinnedList.length === 1 ? "" : "s") + " (" + pinnedList.slice(0, 6).join(", ") + (pinnedList.length > 6 ? "…" : "") + ")",
       newSectionDraft: this.state.newSectionDraft,
       newSectionError: this.state.newSectionError,
-      hasDeleted: Object.keys(deleted).length > 0,
+      hasDeleted: this.state.showRestoreBar && Object.keys(deleted).length > 0,
       deletedLabel: Object.keys(deleted).length + " position" + (Object.keys(deleted).length === 1 ? "" : "s"),
       accountDraft: this.state.accountDraft,
       hasDeletedAccounts: Object.keys(this.state.deletedAccounts).length > 0,
