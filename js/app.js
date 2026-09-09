@@ -305,11 +305,13 @@ class PortfolioApp {
       deletedAccounts: saved.deletedAccounts || {},
       accountDraft: { name: "", kind: "", error: "" },
       showRestoreBar: false,
+      showAccountRestoreBar: false,
       apiKey: saved.apiKey || "",
       keyDraft: saved.apiKey || "",
       lastRefresh: saved.lastRefresh || "",
       savedAt: saved.at || "—",
       group: "All",
+      tickerSearch: "",
       watchlist: false,
       drafts: {},
       syncing: {},
@@ -336,9 +338,22 @@ class PortfolioApp {
 
   /* ---------- state helpers ---------- */
   render() {
+    const active = document.activeElement;
+    const activeId = active && this.root.contains(active) ? active.id : "";
+    const selStart = activeId && "selectionStart" in active ? active.selectionStart : null;
+    const selEnd = activeId && "selectionEnd" in active ? active.selectionEnd : null;
     this.applyTheme();
     const vm = this.buildViewModel();
     this.root.innerHTML = template(vm);
+    if (activeId) {
+      const el = document.getElementById(activeId);
+      if (el && typeof el.focus === "function") {
+        el.focus();
+        if (typeof selStart === "number" && el.setSelectionRange) {
+          try { el.setSelectionRange(selStart, selEnd); } catch (e) {}
+        }
+      }
+    }
   }
   persist() {
     const at = new Date().toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
@@ -542,21 +557,37 @@ class PortfolioApp {
       this.state.customAccounts = this.state.customAccounts.filter(a => a.id !== id);
     } else {
       this.state.deletedAccounts[id] = true;
+      this.armAccountRestoreBar();
     }
     this.persist(); this.render();
   }
-  restoreDeletedAccounts() { this.state.deletedAccounts = {}; this.persist(); this.render(); }
+  armAccountRestoreBar() {
+    this.state.showAccountRestoreBar = true;
+    if (this.accountRestoreBarTimer) clearTimeout(this.accountRestoreBarTimer);
+    this.accountRestoreBarTimer = setTimeout(() => {
+      this.state.showAccountRestoreBar = false;
+      this.accountRestoreBarTimer = null;
+      this.render();
+    }, 10000);
+  }
+  restoreDeletedAccounts() {
+    this.state.deletedAccounts = {};
+    this.state.showAccountRestoreBar = false;
+    if (this.accountRestoreBarTimer) { clearTimeout(this.accountRestoreBarTimer); this.accountRestoreBarTimer = null; }
+    this.persist(); this.render();
+  }
   setTheme(mode) { this.state.theme = mode; this.persist(); this.render(); }
   resetPrices() {
     try { localStorage.removeItem(KEY); } catch (e) {}
     if (this.restoreBarTimer) { clearTimeout(this.restoreBarTimer); this.restoreBarTimer = null; }
+    if (this.accountRestoreBarTimer) { clearTimeout(this.accountRestoreBarTimer); this.accountRestoreBarTimer = null; }
     this.state = Object.assign({}, this.state, {
       prices: Object.assign({}, this.seedPrices), connected: Object.assign({}, this.defaultConn),
       synced: {}, imported: [], custom: [], edits: {}, deleted: {}, drafts: {}, groupDrafts: {},
       extraGroups: [], groupNames_: {}, savedAt: "—", preview: null, importStatus: "",
       live: {}, pinned: {}, feedStatus: {}, lastRefresh: "",
       customAccounts: [], deletedAccounts: {}, accountDraft: { name: "", kind: "", error: "" },
-      showRestoreBar: false, groupOrder: []
+      showRestoreBar: false, showAccountRestoreBar: false, groupOrder: []
     });
     this.render();
   }
@@ -596,6 +627,7 @@ class PortfolioApp {
     this.persist(); this.render();
   }
   setGroupFilter(name) { this.state.group = name; this.render(); }
+  setTickerSearch(text) { this.state.tickerSearch = text; this.render(); }
   onNewSectionDraftChange(text) { this.state.newSectionDraft = text; this.state.newSectionError = ""; this.render(); }
   addSection() {
     const name = (this.state.newSectionDraft || "").trim();
@@ -734,13 +766,15 @@ class PortfolioApp {
       };
     }).filter(s => s.grow > 1);
 
+    const search = (this.state.tickerSearch || "").trim().toUpperCase();
     const groups = orderedNames.filter(g => {
-      if (isWatch(g) && !this.state.watchlist) return false;
+      if (isWatch(g) && !this.state.watchlist && !search) return false;
       if (this.state.group !== "All" && g !== this.state.group) return false;
       return true;
     }).map(g => {
       const orderIdx = orderedNames.indexOf(g);
-      const gl = all.filter(l => l.group === g && (isWatch(g) || l.cost >= dust || (l.value || 0) >= dust));
+      const gl = all.filter(l => l.group === g && (isWatch(g) || l.cost >= dust || (l.value || 0) >= dust))
+        .filter(l => !search || l.ticker.toUpperCase().indexOf(search) > -1);
       const c = gl.reduce((a, l) => a + l.cost, 0);
       const v = gl.reduce((a, l) => a + (l.value || 0), 0);
       const p = v - c;
@@ -777,7 +811,7 @@ class PortfolioApp {
           plClass: l.qty && l.has ? plClass(l.pl) : "pl-flat"
         }))
       };
-    });
+    }).filter(gr => !search || gr.rows.length > 0);
 
     const accountsRaw = this.effectiveAccounts();
     const accounts = accountsRaw.map(a => {
@@ -877,8 +911,10 @@ class PortfolioApp {
       newSectionError: this.state.newSectionError,
       hasDeleted: this.state.showRestoreBar && Object.keys(deleted).length > 0,
       deletedLabel: Object.keys(deleted).length + " position" + (Object.keys(deleted).length === 1 ? "" : "s"),
+      tickerSearch: this.state.tickerSearch,
+      noSearchMatches: !!search && groups.length === 0,
       accountDraft: this.state.accountDraft,
-      hasDeletedAccounts: Object.keys(this.state.deletedAccounts).length > 0,
+      hasDeletedAccounts: this.state.showAccountRestoreBar && Object.keys(this.state.deletedAccounts).length > 0,
       deletedAccountsLabel: Object.keys(this.state.deletedAccounts).length + " account" + (Object.keys(this.state.deletedAccounts).length === 1 ? "" : "s"),
       importStatus: this.state.importStatus,
       importError: this.state.importError,
@@ -1046,6 +1082,7 @@ function template(vm) {
 
   <section class="filters-row" style="flex-direction:row;">
     ${vm.filters.map(f => `<button class="filter-btn${f.active ? " active" : ""}" data-action="set-group" data-group="${escAttr(f.group)}">${esc(f.label)}</button>`).join("")}
+    <input type="search" id="ticker-search" class="field pill-input" value="${escAttr(vm.tickerSearch)}" data-action="ticker-search" placeholder="Search ticker…">
     <div class="spacer"></div>
     <input type="text" class="field pill-input" value="${escAttr(vm.newSectionDraft)}" data-action="new-section-draft" placeholder="New section name">
     <button class="filter-btn" data-action="add-section">+ Add section</button>
@@ -1061,6 +1098,8 @@ function template(vm) {
     <span>${esc(vm.deletedLabel)} removed from this portfolio.</span>
     <button class="btn-danger" data-action="restore-deleted">Restore all</button>
   </div>` : ""}
+
+  ${vm.noSearchMatches ? `<div class="hint" style="padding:14px 0;">No tickers match “${esc(vm.tickerSearch)}”.</div>` : ""}
 
   ${vm.groups.map(group => `
   <section class="group" style="opacity:${group.opacity};">
@@ -1193,6 +1232,12 @@ PortfolioApp.prototype.attachEvents = function () {
         break;
       }
     }
+  });
+
+  root.addEventListener("input", e => {
+    const el = e.target.closest("[data-action]");
+    if (!el) return;
+    if (el.dataset.action === "ticker-search") this.setTickerSearch(el.value);
   });
 
   root.addEventListener("dragover", e => {
