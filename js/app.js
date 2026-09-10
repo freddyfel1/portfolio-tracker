@@ -366,6 +366,10 @@ class PortfolioApp {
     const live = {};
     SEED.forEach(r => { live[r[2]] = true; });
     this.state.imported.forEach(l => { live[l.ticker] = true; });
+    Object.keys(this.state.edits).forEach(key => {
+      const e = this.state.edits[key];
+      if (e && e.ticker) live[e.ticker] = true;
+    });
     return Object.keys(live).filter(t => FEED_MAP[t]);
   }
 
@@ -599,6 +603,21 @@ class PortfolioApp {
   }
   editQty(key, text) { this.editLot(key, "qty", "q" + key, text); }
   editBuy(key, text) { this.editLot(key, "buy", "b" + key, text); }
+  editTicker(key, text) {
+    this.state.drafts["tk" + key] = text;
+    const t = text.trim().toUpperCase();
+    if (t) {
+      this.state.edits[key] = Object.assign({}, this.state.edits[key], { ticker: t });
+      this.persist();
+    }
+    this.render();
+  }
+  editSub(key, text) {
+    this.state.drafts["sb" + key] = text;
+    this.state.edits[key] = Object.assign({}, this.state.edits[key], { sub: text });
+    this.persist();
+    this.render();
+  }
   editPrice(ticker, text) {
     this.state.drafts[ticker] = text;
     const n = num(text);
@@ -643,7 +662,9 @@ class PortfolioApp {
       .map(r => {
         const key = r[7];
         const e = edits[key] || {};
-        const group = r[0], ticker = r[2], sub = r[3];
+        const group = r[0];
+        const ticker = e.ticker !== undefined ? e.ticker : r[2];
+        const sub = e.sub !== undefined ? e.sub : r[3];
         const qty = e.qty !== undefined ? e.qty : r[4];
         const buy = e.buy !== undefined ? e.buy : r[5];
         const feed = this.state.live[ticker];
@@ -706,7 +727,9 @@ class PortfolioApp {
         rows: gl.map(l => ({
           key: l.key,
           ticker: l.ticker,
-          sub: l.sub + (l.has ? "" : " · needs price") + (l.edited ? " · edited" : ""),
+          tickerInput: this.state.drafts["tk" + l.key] !== undefined ? this.state.drafts["tk" + l.key] : l.ticker,
+          subInput: this.state.drafts["sb" + l.key] !== undefined ? this.state.drafts["sb" + l.key] : l.sub,
+          flag: [l.has ? "" : "needs price", l.edited ? "edited" : ""].filter(Boolean).join(" · "),
           qtyInput: this.state.drafts["q" + l.key] !== undefined ? this.state.drafts["q" + l.key] : qtyFmt(l.qty),
           buyInput: this.state.drafts["b" + l.key] !== undefined ? this.state.drafts["b" + l.key] : (l.buy ? priceMoney(l.buy) : ""),
           cost: l.cost ? money(l.cost) : "—",
@@ -975,8 +998,9 @@ function template(vm) {
     ${group.rows.map(row => `
     <div class="cols lot-row">
       <div class="lot-asset">
-        <span class="lot-ticker">${esc(row.ticker)}</span>
-        <span class="lot-sub">${esc(row.sub)}</span>
+        <input type="text" class="lot-ticker-input" value="${escAttr(row.tickerInput)}" title="Ticker" data-action="edit-ticker" data-key="${escAttr(row.key)}">
+        <input type="text" class="lot-sub-input" value="${escAttr(row.subInput)}" title="Description" data-action="edit-sub" data-key="${escAttr(row.key)}">
+        ${row.flag ? `<span class="lot-flag">${esc(row.flag)}</span>` : ""}
       </div>
       <div class="lot-input-cell">
         <input type="text" class="lot-input" value="${escAttr(row.qtyInput)}" title="Shares / units held" data-action="edit-qty" data-key="${escAttr(row.key)}">
@@ -1063,6 +1087,8 @@ PortfolioApp.prototype.attachEvents = function () {
       case "rename-group": this.renameGroup(el.dataset.group, el.value); break;
       case "edit-qty": this.editQty(el.dataset.key, el.value); break;
       case "edit-buy": this.editBuy(el.dataset.key, el.value); break;
+      case "edit-ticker": this.editTicker(el.dataset.key, el.value); break;
+      case "edit-sub": this.editSub(el.dataset.key, el.value); break;
       case "edit-price": this.editPrice(el.dataset.ticker, el.value); break;
       case "draft-ticker": this.groupDraftChange(el.dataset.group, "ticker", el.value); break;
       case "draft-qty": this.groupDraftChange(el.dataset.group, "qty", el.value); break;
