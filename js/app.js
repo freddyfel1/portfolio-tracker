@@ -937,10 +937,11 @@ function template(vm) {
       <h1>Investment Portfolio Tracker</h1>
     </div>
     <div class="header-right">
-      <div class="pill-group">
+      <div class="pill-group no-print">
         ${vm.themeModes.map(m => `<button class="pill mono${m.active ? " active" : ""}" data-action="set-theme" data-mode="${m.mode}">${esc(m.label)}</button>`).join("")}
       </div>
-      <button class="link-btn" data-action="reset-prices">Reset all edits</button>
+      <button class="link-btn no-print" data-action="export-pdf">Export PDF</button>
+      <button class="link-btn no-print" data-action="reset-prices">Reset all edits</button>
       <div class="meta">${vm.lotCount} lots · ${vm.connectedCount} accounts live<br>edited ${esc(vm.savedAt)}</div>
     </div>
   </header>
@@ -973,21 +974,21 @@ function template(vm) {
         </div>
       </div>`).join("")}
     </div>
-    <div class="add-row">
+    <div class="add-row no-print">
       <input type="text" class="field add-ticker" style="flex:0 1 200px;text-transform:none;" value="${escAttr(vm.accountDraft.name)}" placeholder="Account name" data-action="account-draft-name">
       <input type="text" class="field add-ticker" style="flex:0 1 220px;text-transform:none;" value="${escAttr(vm.accountDraft.kind)}" placeholder="Kind (optional)" data-action="account-draft-kind">
       <button class="btn-gold" data-action="add-account">+ Add account</button>
       ${vm.accountDraft.error ? `<span class="error-text" style="flex-basis:100%;margin-top:0;">${esc(vm.accountDraft.error)}</span>` : ""}
     </div>
     ${vm.hasDeletedAccounts ? `
-    <div class="deleted-bar">
+    <div class="deleted-bar no-print">
       <span>${esc(vm.deletedAccountsLabel)} removed.</span>
       <button class="btn-danger" data-action="restore-accounts">Restore all</button>
     </div>` : ""}
-    <div class="max-note">Live brokerage and wallet links are not wired up in this prototype — connecting simulates a sync and pulls in the positions already on file for that account. Use <strong>Import a file</strong> below to load real balances.</div>
+    <div class="max-note no-print">Live brokerage and wallet links are not wired up in this prototype — connecting simulates a sync and pulls in the positions already on file for that account. Use <strong>Import a file</strong> below to load real balances.</div>
   </section>
 
-  <section>
+  <section class="no-print">
     <div class="section-label">Price connector</div>
     <div class="connector">
       <div class="connector-top">
@@ -1032,7 +1033,7 @@ function template(vm) {
     </div>
   </section>
 
-  <section>
+  <section class="no-print">
     <div class="section-label">Import a file</div>
     <div class="dropzone${vm.dragging ? " dragging" : ""}" data-dropzone>
       <div class="dropzone-top">
@@ -1081,7 +1082,7 @@ function template(vm) {
     </div>
   </section>
 
-  <section class="filters-row" style="flex-direction:row;">
+  <section class="filters-row no-print" style="flex-direction:row;">
     ${vm.filters.map(f => `<button class="filter-btn${f.active ? " active" : ""}" data-action="set-group" data-group="${escAttr(f.group)}">${esc(f.label)}</button>`).join("")}
     <input type="search" id="ticker-search" class="field pill-input" value="${escAttr(vm.tickerSearch)}" data-action="ticker-search" placeholder="Search ticker…">
     <div class="spacer"></div>
@@ -1190,6 +1191,7 @@ PortfolioApp.prototype.attachEvents = function () {
     switch (action) {
       case "set-theme": this.setTheme(el.dataset.mode); break;
       case "reset-prices": this.resetPrices(); break;
+      case "export-pdf": window.print(); break;
       case "toggle-account": this.toggleAccount(el.dataset.id); break;
       case "delete-account": this.deleteAccount(el.dataset.id); break;
       case "add-account": this.addAccount(); break;
