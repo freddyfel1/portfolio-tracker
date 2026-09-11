@@ -1010,7 +1010,7 @@ function template(vm) {
       </div>
       <div class="lot-static right">${row.cost}</div>
       <div class="lot-input-cell">
-        <input type="text" class="lot-input price-input ${row.priceClass}" value="${escAttr(row.priceInput)}" title="${escAttr(row.priceTitle)}" data-action="edit-price" data-ticker="${escAttr(row.ticker)}">
+        <input type="text" class="lot-input price-input ${row.priceClass}" value="${escAttr(row.priceInput)}" title="${escAttr(row.priceTitle)}" data-action="edit-price" data-ticker="${escAttr(row.ticker)}" data-key="${escAttr(row.key)}">
       </div>
       <div class="lot-static right">${row.value}</div>
       <div class="lot-static right ${row.plClass}">${row.pl}</div>
@@ -1071,6 +1071,63 @@ PortfolioApp.prototype.attachEvents = function () {
       case "draft-add": this.groupDraftAdd(el.dataset.group); break;
       case "move-group-up": this.moveGroup(el.dataset.group, -1); break;
       case "move-group-down": this.moveGroup(el.dataset.group, 1); break;
+    }
+  });
+
+  const LOT_FIELD_ORDER = ["edit-ticker", "edit-sub", "edit-qty", "edit-buy", "edit-price"];
+  const DRAFT_FIELD_ORDER = ["draft-ticker", "draft-qty", "draft-buy", "draft-price"];
+  root.addEventListener("keydown", e => {
+    if (e.key !== "Enter") return;
+    const el = e.target;
+    if (el.tagName !== "INPUT") return;
+    const action = el.dataset.action;
+
+    if (LOT_FIELD_ORDER.indexOf(action) > -1) {
+      e.preventDefault();
+      const key = el.dataset.key;
+      const nextAction = LOT_FIELD_ORDER[LOT_FIELD_ORDER.indexOf(action) + 1];
+      let nextRowKey = null;
+      if (!nextAction) {
+        const rowKeys = Array.from(root.querySelectorAll('[data-action="edit-ticker"]')).map(i => i.dataset.key);
+        const rowIdx = rowKeys.indexOf(key);
+        if (rowIdx > -1 && rowIdx + 1 < rowKeys.length) nextRowKey = rowKeys[rowIdx + 1];
+      }
+      el.blur();
+      const next = nextAction
+        ? root.querySelector(`[data-key="${CSS.escape(key)}"][data-action="${nextAction}"]`)
+        : (nextRowKey && root.querySelector(`[data-key="${CSS.escape(nextRowKey)}"][data-action="edit-ticker"]`));
+      if (next) { next.focus(); next.select(); }
+      return;
+    }
+
+    if (DRAFT_FIELD_ORDER.indexOf(action) > -1) {
+      e.preventDefault();
+      const group = el.dataset.group;
+      const nextAction = DRAFT_FIELD_ORDER[DRAFT_FIELD_ORDER.indexOf(action) + 1];
+      el.blur();
+      if (nextAction) {
+        const next = root.querySelector(`[data-group="${CSS.escape(group)}"][data-action="${nextAction}"]`);
+        if (next) { next.focus(); next.select(); }
+      } else {
+        const addBtn = root.querySelector(`[data-group="${CSS.escape(group)}"][data-action="draft-add"]`);
+        if (addBtn) addBtn.click();
+      }
+      return;
+    }
+
+    if (action === "new-section-draft") {
+      e.preventDefault();
+      el.blur();
+      const addBtn = root.querySelector('[data-action="add-section"]');
+      if (addBtn) addBtn.click();
+      return;
+    }
+
+    if (action === "key-draft") {
+      e.preventDefault();
+      el.blur();
+      const saveBtn = root.querySelector('[data-action="save-key"]');
+      if (saveBtn) saveBtn.click();
     }
   });
 
