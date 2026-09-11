@@ -638,6 +638,17 @@ class PortfolioApp {
   }
   editQty(key, text) { this.editLot(key, "qty", "q" + key, text); }
   editBuy(key, text) { this.editLot(key, "buy", "b" + key, text); }
+  editSellPrice(key, text) { this.editLot(key, "sellPrice", "sp" + key, text); }
+  editBuyDate(key, text) {
+    this.state.edits[key] = Object.assign({}, this.state.edits[key], { buyDate: text });
+    this.persist();
+    this.render();
+  }
+  editSellDate(key, text) {
+    this.state.edits[key] = Object.assign({}, this.state.edits[key], { sellDate: text });
+    this.persist();
+    this.render();
+  }
   editTicker(key, text) {
     this.state.drafts["tk" + key] = text;
     const t = text.trim().toUpperCase();
@@ -702,13 +713,16 @@ class PortfolioApp {
         const sub = e.sub !== undefined ? e.sub : r[3];
         const qty = e.qty !== undefined ? e.qty : r[4];
         const buy = e.buy !== undefined ? e.buy : r[5];
+        const buyDate = e.buyDate !== undefined ? e.buyDate : "";
+        const sellDate = e.sellDate !== undefined ? e.sellDate : "";
+        const sellPrice = e.sellPrice !== undefined ? e.sellPrice : null;
         const feed = this.state.live[ticker];
         const usingFeed = !!feed && !this.state.pinned[ticker];
         const price = usingFeed ? feed.price : (prices[ticker] !== undefined ? prices[ticker] : r[6]);
         const has = price !== null && price !== undefined && isFinite(price);
         const cost = qty * buy;
         const edited = e.qty !== undefined || e.buy !== undefined;
-        return { key, group, ticker, sub, qty, buy, price, has, edited, cost, usingFeed, feedAt: feed ? feed.at : "", feedSource: feed ? feed.source : "", pinned: !!this.state.pinned[ticker], value: has ? qty * price : null, pl: has ? qty * price - cost : null };
+        return { key, group, ticker, sub, qty, buy, buyDate, sellDate, sellPrice, price, has, edited, cost, usingFeed, feedAt: feed ? feed.at : "", feedSource: feed ? feed.source : "", pinned: !!this.state.pinned[ticker], value: has ? qty * price : null, pl: has ? qty * price - cost : null };
       });
 
     const isWatch = g => g.indexOf("Watchlist") === 0;
@@ -772,10 +786,13 @@ class PortfolioApp {
           flag: [l.has ? "" : "needs price", l.edited ? "edited" : ""].filter(Boolean).join(" · "),
           qtyInput: this.state.drafts["q" + l.key] !== undefined ? this.state.drafts["q" + l.key] : qtyFmt(l.qty),
           buyInput: this.state.drafts["b" + l.key] !== undefined ? this.state.drafts["b" + l.key] : (l.buy ? priceMoney(l.buy) : ""),
+          buyDateInput: l.buyDate,
           cost: l.cost ? money(l.cost) : "—",
           priceInput: this.state.drafts[l.ticker] !== undefined ? this.state.drafts[l.ticker] : priceMoney(l.price),
           priceClass: l.usingFeed ? "live" : (l.pinned ? "pinned" : ""),
           priceTitle: l.usingFeed ? ("Live from " + l.feedSource + " at " + l.feedAt + " — type a value to pin your own") : (l.pinned ? "Pinned manual price — the feed will not overwrite it" : "Spreadsheet price — no live feed for this ticker"),
+          sellDateInput: l.sellDate,
+          sellPriceInput: this.state.drafts["sp" + l.key] !== undefined ? this.state.drafts["sp" + l.key] : (l.sellPrice !== null ? priceMoney(l.sellPrice) : ""),
           value: l.qty ? money(l.value) : "—",
           pl: l.qty && l.has ? signed(l.pl) : "—",
           ret: l.qty && l.has && l.cost ? (l.pl / l.cost * 100).toFixed(1) + "%" : "—",
@@ -1030,9 +1047,10 @@ function template(vm) {
       </div>
     </div>
 
+    <div class="rows-scroll">
     <div class="cols col-head">
-      <div>Asset</div><div class="right">Qty</div><div class="right">Buy Price</div><div class="right">Cost</div>
-      <div class="right">Price now</div><div class="right">Value</div><div class="right">P/L</div><div class="right">Return</div><div style="text-align:center;">Del</div>
+      <div>Asset</div><div class="right">Qty</div><div class="right">Buy Price</div><div class="right">Buy Date</div><div class="right">Cost</div>
+      <div class="right">Price now</div><div class="right">Sell Date</div><div class="right">Sell Price</div><div class="right">Value</div><div class="right">P/L</div><div class="right">Return</div><div style="text-align:center;">Del</div>
     </div>
 
     ${group.rows.map(row => `
@@ -1054,9 +1072,18 @@ function template(vm) {
       <div class="lot-input-cell">
         <input type="text" class="lot-input" value="${escAttr(row.buyInput)}" title="Average buy price for this lot" data-action="edit-buy" data-key="${escAttr(row.key)}">
       </div>
+      <div class="lot-input-cell">
+        <input type="date" class="lot-input lot-date-input" value="${escAttr(row.buyDateInput)}" title="Date this lot was bought" data-action="edit-buy-date" data-key="${escAttr(row.key)}">
+      </div>
       <div class="lot-static right">${row.cost}</div>
       <div class="lot-input-cell">
         <input type="text" class="lot-input price-input ${row.priceClass}" value="${escAttr(row.priceInput)}" title="${escAttr(row.priceTitle)}" data-action="edit-price" data-ticker="${escAttr(row.ticker)}" data-key="${escAttr(row.key)}">
+      </div>
+      <div class="lot-input-cell">
+        <input type="date" class="lot-input lot-date-input" value="${escAttr(row.sellDateInput)}" title="Date this lot was sold" data-action="edit-sell-date" data-key="${escAttr(row.key)}">
+      </div>
+      <div class="lot-input-cell">
+        <input type="text" class="lot-input" value="${escAttr(row.sellPriceInput)}" title="Price this lot was sold at" data-action="edit-sell-price" data-key="${escAttr(row.key)}">
       </div>
       <div class="lot-static right">${row.value}</div>
       <div class="lot-static right ${row.plClass}">${row.pl}</div>
@@ -1065,6 +1092,7 @@ function template(vm) {
         <button class="del-btn" title="Remove this position" data-action="delete-row" data-key="${escAttr(row.key)}">×</button>
       </div>
     </div>`).join("")}
+    </div>
 
     <div class="add-row">
       <input type="text" class="field add-ticker" value="${escAttr(group.draft.ticker)}" placeholder="Ticker" data-action="draft-ticker" data-group="${escAttr(group.name)}">
@@ -1086,6 +1114,7 @@ function template(vm) {
       <li>Linqto positions (Ripple, Polysign) are marked at <strong>$0</strong> — the spreadsheet notes Linqto filed for bankruptcy. That is a placeholder, not a recovery estimate.</li>
       <li>Several prices in the sheet were broken lookups (VET, PEPE, XCN, ALGO at 0; Cristina's XRP at $0.02 against $1.42 in the main wallet). The live feed now supplies those, so they price like every other lot. Anything with no source at all — silver, COPI, imported rows without a price column — is flagged <strong>needs price</strong> and stays out of allocation until you type one.</li>
       <li>Realized P/L is not carried over — the clean sheet records $0 realized to date.</li>
+      <li>Buy Date, Sell Date, and Sell Price are optional manual record-keeping fields per lot — they don't affect cost basis, current value, or any total; nothing is auto-marked "sold" when you fill them in.</li>
     </ul>
   </section>
 </div></div>`;
@@ -1122,7 +1151,7 @@ PortfolioApp.prototype.attachEvents = function () {
     }
   });
 
-  const LOT_FIELD_ORDER = ["edit-ticker", "edit-sub", "edit-qty", "edit-buy", "edit-price"];
+  const LOT_FIELD_ORDER = ["edit-ticker", "edit-sub", "edit-qty", "edit-buy", "edit-buy-date", "edit-price", "edit-sell-date", "edit-sell-price"];
   const DRAFT_FIELD_ORDER = ["draft-ticker", "draft-qty", "draft-buy", "draft-price"];
   root.addEventListener("keydown", e => {
     if (e.key !== "Enter") return;
@@ -1192,9 +1221,12 @@ PortfolioApp.prototype.attachEvents = function () {
       case "rename-group": this.renameGroup(el.dataset.group, el.value); break;
       case "edit-qty": this.editQty(el.dataset.key, el.value); break;
       case "edit-buy": this.editBuy(el.dataset.key, el.value); break;
+      case "edit-buy-date": this.editBuyDate(el.dataset.key, el.value); break;
       case "edit-ticker": this.editTicker(el.dataset.key, el.value); break;
       case "edit-sub": this.editSub(el.dataset.key, el.value); break;
       case "edit-price": this.editPrice(el.dataset.ticker, el.value); break;
+      case "edit-sell-date": this.editSellDate(el.dataset.key, el.value); break;
+      case "edit-sell-price": this.editSellPrice(el.dataset.key, el.value); break;
       case "draft-ticker": this.groupDraftChange(el.dataset.group, "ticker", el.value); break;
       case "draft-qty": this.groupDraftChange(el.dataset.group, "qty", el.value); break;
       case "draft-buy": this.groupDraftChange(el.dataset.group, "buy", el.value); break;
