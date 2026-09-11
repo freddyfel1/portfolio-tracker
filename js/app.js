@@ -794,6 +794,7 @@ class PortfolioApp {
           sellDateInput: l.sellDate,
           sellPriceInput: this.state.drafts["sp" + l.key] !== undefined ? this.state.drafts["sp" + l.key] : (l.sellPrice !== null ? priceMoney(l.sellPrice) : ""),
           value: l.qty ? money(l.value) : "—",
+          sellValue: l.qty && l.sellPrice !== null ? money(l.qty * l.sellPrice) : "—",
           pl: l.qty && l.has ? signed(l.pl) : "—",
           ret: l.qty && l.has && l.cost ? (l.pl / l.cost * 100).toFixed(1) + "%" : "—",
           plClass: l.qty && l.has ? plClass(l.pl) : "pl-flat"
@@ -1050,7 +1051,7 @@ function template(vm) {
     <div class="rows-scroll">
     <div class="cols col-head">
       <div>Asset</div><div class="right">Qty</div><div class="right">Buy Price</div><div class="right">Buy Date</div><div class="right">Cost</div>
-      <div class="right">Price now</div><div class="right">Sell Date</div><div class="right">Sell Price</div><div class="right">Value</div><div class="right">P/L</div><div class="right">Return</div><div style="text-align:center;">Del</div>
+      <div class="right">Price now</div><div class="right">Sell Date</div><div class="right">Sell Price</div><div class="right">Value</div><div class="right">Sell Value</div><div class="right">P/L</div><div class="right">Return</div><div style="text-align:center;">Del</div>
     </div>
 
     ${group.rows.map(row => `
@@ -1086,6 +1087,7 @@ function template(vm) {
         <input type="text" class="lot-input" value="${escAttr(row.sellPriceInput)}" title="Price this lot was sold at" data-action="edit-sell-price" data-key="${escAttr(row.key)}">
       </div>
       <div class="lot-static right">${row.value}</div>
+      <div class="lot-static right">${row.sellValue}</div>
       <div class="lot-static right ${row.plClass}">${row.pl}</div>
       <div class="lot-static right ${row.plClass}">${row.ret}</div>
       <div class="del-cell">
@@ -1114,7 +1116,7 @@ function template(vm) {
       <li>Linqto positions (Ripple, Polysign) are marked at <strong>$0</strong> — the spreadsheet notes Linqto filed for bankruptcy. That is a placeholder, not a recovery estimate.</li>
       <li>Several prices in the sheet were broken lookups (VET, PEPE, XCN, ALGO at 0; Cristina's XRP at $0.02 against $1.42 in the main wallet). The live feed now supplies those, so they price like every other lot. Anything with no source at all — silver, COPI, imported rows without a price column — is flagged <strong>needs price</strong> and stays out of allocation until you type one.</li>
       <li>Realized P/L is not carried over — the clean sheet records $0 realized to date.</li>
-      <li>Buy Date, Sell Date, and Sell Price are optional manual record-keeping fields per lot — they don't affect cost basis, current value, or any total; nothing is auto-marked "sold" when you fill them in.</li>
+      <li>Buy Date, Sell Date, and Sell Price are optional manual record-keeping fields per lot; Sell Value is simply qty × Sell Price. None of them affect cost basis, current value, or any total — nothing is auto-marked "sold" when you fill them in.</li>
     </ul>
   </section>
 </div></div>`;
