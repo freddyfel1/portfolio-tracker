@@ -318,19 +318,25 @@ class PortfolioApp {
   /* ---------- state helpers ---------- */
   render() {
     const active = document.activeElement;
-    const activeId = active && this.root.contains(active) ? active.id : "";
-    const selStart = activeId && "selectionStart" in active ? active.selectionStart : null;
-    const selEnd = activeId && "selectionEnd" in active ? active.selectionEnd : null;
+    const inRoot = !!(active && this.root.contains(active));
+    const activeId = inRoot ? active.id : "";
+    const activeSelector = inRoot && !activeId && active.dataset && active.dataset.action
+      ? (active.dataset.key !== undefined
+          ? `[data-key="${CSS.escape(active.dataset.key)}"][data-action="${CSS.escape(active.dataset.action)}"]`
+          : (active.dataset.group !== undefined
+              ? `[data-group="${CSS.escape(active.dataset.group)}"][data-action="${CSS.escape(active.dataset.action)}"]`
+              : ""))
+      : "";
+    const selStart = inRoot && "selectionStart" in active ? active.selectionStart : null;
+    const selEnd = inRoot && "selectionEnd" in active ? active.selectionEnd : null;
     this.applyTheme();
     const vm = this.buildViewModel();
     this.root.innerHTML = template(vm);
-    if (activeId) {
-      const el = document.getElementById(activeId);
-      if (el && typeof el.focus === "function") {
-        el.focus();
-        if (typeof selStart === "number" && el.setSelectionRange) {
-          try { el.setSelectionRange(selStart, selEnd); } catch (e) {}
-        }
+    const el = activeId ? document.getElementById(activeId) : (activeSelector ? this.root.querySelector(activeSelector) : null);
+    if (el && typeof el.focus === "function") {
+      el.focus();
+      if (typeof selStart === "number" && el.setSelectionRange) {
+        try { el.setSelectionRange(selStart, selEnd); } catch (e) {}
       }
     }
   }
@@ -364,12 +370,17 @@ class PortfolioApp {
 
   /* ---------- live price feed ---------- */
   neededTickers() {
+    const deleted = this.state.deleted;
+    const edits = this.state.edits;
+    const entries = SEED.map((r, n) => ["s" + n, r[2]])
+      .concat(this.state.imported.map((l, n) => ["i" + n, l.ticker]))
+      .concat(this.state.custom.map((l, n) => ["c" + n, l.ticker]));
     const live = {};
-    SEED.forEach(r => { live[r[2]] = true; });
-    this.state.imported.forEach(l => { live[l.ticker] = true; });
-    Object.keys(this.state.edits).forEach(key => {
-      const e = this.state.edits[key];
-      if (e && e.ticker) live[e.ticker] = true;
+    entries.forEach(([key, baseTicker]) => {
+      if (deleted[key]) return;
+      const e = edits[key];
+      const ticker = e && e.ticker !== undefined ? e.ticker : baseTicker;
+      live[ticker] = true;
     });
     return Object.keys(live).filter(t => FEED_MAP[t]);
   }
