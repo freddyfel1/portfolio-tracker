@@ -281,6 +281,7 @@ class PortfolioApp {
       extraGroups: saved.extraGroups || [],
       groupNames_: saved.groupNames_ || {},
       groupOrder: saved.groupOrder || [],
+      rowOrder: saved.rowOrder || {},
       newSectionDraft: "",
       newSectionError: "",
       showRestoreBar: false,
@@ -341,7 +342,7 @@ class PortfolioApp {
       live: this.state.live, pinned: this.state.pinned, auto: this.state.auto, intervalMs: this.state.intervalMs,
       feedStatus: this.state.feedStatus, lastRefresh: this.state.lastRefresh, apiKey: this.state.apiKey,
       theme: this.state.theme, custom: this.state.custom, extraGroups: this.state.extraGroups,
-      groupNames_: this.state.groupNames_, groupOrder: this.state.groupOrder, at: at
+      groupNames_: this.state.groupNames_, groupOrder: this.state.groupOrder, rowOrder: this.state.rowOrder, at: at
     };
     try { localStorage.setItem(KEY, JSON.stringify(payload)); } catch (e) {}
     this.state.savedAt = at;
@@ -586,6 +587,13 @@ class PortfolioApp {
     this.state.extraGroups.forEach(g => { if (names.indexOf(g) < 0) names.push(g); });
     return names;
   }
+  rowKeysForGroup(group) {
+    const deleted = this.state.deleted;
+    const entries = SEED.map((r, n) => [r[0], "s" + n])
+      .concat(this.state.imported.map((l, n) => ["Imported — " + l.file, "i" + n]))
+      .concat(this.state.custom.map((l, n) => [l.group, "c" + n]));
+    return entries.filter(([g, key]) => g === group && !deleted[key]).map(([, key]) => key);
+  }
   moveGroup(name, dir) {
     const orderedNames = this.orderedGroupNames(this.discoverGroupNames());
     const idx = orderedNames.indexOf(name);
@@ -594,6 +602,22 @@ class PortfolioApp {
     const next = orderedNames.slice();
     const tmp = next[idx]; next[idx] = next[swapIdx]; next[swapIdx] = tmp;
     this.state.groupOrder = next;
+    this.persist(); this.render();
+  }
+  orderedRowKeys(group, keys) {
+    const order = (this.state.rowOrder && this.state.rowOrder[group]) || [];
+    const known = order.filter(k => keys.indexOf(k) > -1);
+    const extra = keys.filter(k => known.indexOf(k) < 0);
+    return known.concat(extra);
+  }
+  moveRow(key, group, dir) {
+    const keys = this.orderedRowKeys(group, this.rowKeysForGroup(group));
+    const idx = keys.indexOf(key);
+    const swapIdx = idx + dir;
+    if (idx < 0 || swapIdx < 0 || swapIdx >= keys.length) return;
+    const next = keys.slice();
+    const tmp = next[idx]; next[idx] = next[swapIdx]; next[swapIdx] = tmp;
+    this.state.rowOrder = Object.assign({}, this.state.rowOrder, { [group]: next });
     this.persist(); this.render();
   }
   renameGroup(group, text) {
@@ -707,6 +731,8 @@ class PortfolioApp {
       const gl = all.filter(l => l.group === g && (isWatch(g) || l.cost >= dust || (l.value || 0) >= dust))
         .filter(l => !search || l.ticker.toUpperCase().indexOf(search) > -1)
         .filter(l => isWatch(g) || !this.state.hideZero || l.qty > 0);
+      const rowOrder = this.orderedRowKeys(g, this.rowKeysForGroup(g));
+      gl.sort((a, b) => rowOrder.indexOf(a.key) - rowOrder.indexOf(b.key));
       const c = gl.reduce((a, l) => a + l.cost, 0);
       const v = gl.reduce((a, l) => a + (l.value || 0), 0);
       const p = v - c;
@@ -726,6 +752,9 @@ class PortfolioApp {
         plClass: isWatch(g) ? "pl-flat" : plClass(p),
         rows: gl.map(l => ({
           key: l.key,
+          group: g,
+          canMoveUp: rowOrder.indexOf(l.key) > 0,
+          canMoveDown: rowOrder.indexOf(l.key) < rowOrder.length - 1,
           ticker: l.ticker,
           tickerInput: this.state.drafts["tk" + l.key] !== undefined ? this.state.drafts["tk" + l.key] : l.ticker,
           subInput: this.state.drafts["sb" + l.key] !== undefined ? this.state.drafts["sb" + l.key] : l.sub,
@@ -997,10 +1026,16 @@ function template(vm) {
 
     ${group.rows.map(row => `
     <div class="cols lot-row">
-      <div class="lot-asset">
-        <input type="text" class="lot-ticker-input" value="${escAttr(row.tickerInput)}" title="Ticker" data-action="edit-ticker" data-key="${escAttr(row.key)}">
-        <input type="text" class="lot-sub-input" value="${escAttr(row.subInput)}" title="Description" data-action="edit-sub" data-key="${escAttr(row.key)}">
-        ${row.flag ? `<span class="lot-flag">${esc(row.flag)}</span>` : ""}
+      <div class="lot-asset lot-asset-with-move">
+        <div class="move-btns">
+          <button class="move-btn" title="Move position up" data-action="move-row-up" data-key="${escAttr(row.key)}" data-group="${escAttr(row.group)}" ${row.canMoveUp ? "" : "disabled"}>▲</button>
+          <button class="move-btn" title="Move position down" data-action="move-row-down" data-key="${escAttr(row.key)}" data-group="${escAttr(row.group)}" ${row.canMoveDown ? "" : "disabled"}>▼</button>
+        </div>
+        <div class="lot-asset-fields">
+          <input type="text" class="lot-ticker-input" value="${escAttr(row.tickerInput)}" title="Ticker" data-action="edit-ticker" data-key="${escAttr(row.key)}">
+          <input type="text" class="lot-sub-input" value="${escAttr(row.subInput)}" title="Description" data-action="edit-sub" data-key="${escAttr(row.key)}">
+          ${row.flag ? `<span class="lot-flag">${esc(row.flag)}</span>` : ""}
+        </div>
       </div>
       <div class="lot-input-cell">
         <input type="text" class="lot-input" value="${escAttr(row.qtyInput)}" title="Shares / units held" data-action="edit-qty" data-key="${escAttr(row.key)}">
@@ -1071,6 +1106,8 @@ PortfolioApp.prototype.attachEvents = function () {
       case "draft-add": this.groupDraftAdd(el.dataset.group); break;
       case "move-group-up": this.moveGroup(el.dataset.group, -1); break;
       case "move-group-down": this.moveGroup(el.dataset.group, 1); break;
+      case "move-row-up": this.moveRow(el.dataset.key, el.dataset.group, -1); break;
+      case "move-row-down": this.moveRow(el.dataset.key, el.dataset.group, 1); break;
     }
   });
 
