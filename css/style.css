@@ -158,7 +158,7 @@ input[type="search"]::-webkit-search-cancel-button { cursor: pointer; }
 .group-stats .cost { color: var(--textMute); }
 .group-stats .value { color: var(--textStrong); }
 .rows-scroll { overflow-x: auto; min-width: 0; }
-.cols { display: grid; grid-template-columns: minmax(120px, 1.6fr) minmax(56px, 0.7fr) minmax(70px, 0.85fr) minmax(96px, 0.9fr) minmax(66px, 0.8fr) minmax(70px, 0.85fr) minmax(96px, 0.9fr) minmax(70px, 0.85fr) minmax(66px, 0.8fr) minmax(66px, 0.8fr) minmax(66px, 0.8fr) minmax(50px, 0.55fr) 36px; min-width: 928px; }
+.cols { display: grid; grid-template-columns: minmax(120px, 1.6fr) minmax(56px, 0.7fr) minmax(70px, 0.85fr) minmax(96px, 0.9fr) minmax(66px, 0.8fr) minmax(70px, 0.85fr) minmax(70px, 0.85fr) minmax(70px, 0.85fr) minmax(96px, 0.9fr) minmax(70px, 0.85fr) minmax(66px, 0.8fr) minmax(66px, 0.8fr) minmax(66px, 0.8fr) minmax(50px, 0.55fr) 36px; min-width: 1068px; }
 .col-head { background: var(--panel); font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--textMute); border-bottom: 1px solid var(--borderSoft); }
 .col-head > div { padding: 9px 10px; }
 .col-head > div:first-child { padding: 9px 14px; }
@@ -215,7 +215,7 @@ input[type="search"]::-webkit-search-cancel-button { cursor: pointer; }
   .page { padding: 0 !important; }
   .no-print, .move-btns, .del-btn, .checkbox-label, .file-label, .add-row { display: none !important; }
   .rows-scroll { overflow: visible !important; }
-  .cols { grid-template-columns: minmax(120px, 1.6fr) minmax(56px, 0.7fr) minmax(70px, 0.85fr) minmax(96px, 0.9fr) minmax(66px, 0.8fr) minmax(70px, 0.85fr) minmax(96px, 0.9fr) minmax(70px, 0.85fr) minmax(66px, 0.8fr) minmax(66px, 0.8fr) minmax(66px, 0.8fr) minmax(50px, 0.55fr) !important; min-width: 0 !important; }
+  .cols { grid-template-columns: minmax(120px, 1.6fr) minmax(56px, 0.7fr) minmax(70px, 0.85fr) minmax(96px, 0.9fr) minmax(66px, 0.8fr) minmax(70px, 0.85fr) minmax(70px, 0.85fr) minmax(70px, 0.85fr) minmax(96px, 0.9fr) minmax(70px, 0.85fr) minmax(66px, 0.8fr) minmax(66px, 0.8fr) minmax(66px, 0.8fr) minmax(50px, 0.55fr) !important; min-width: 0 !important; }
   .col-head > div:last-child, .del-cell { display: none !important; }
   section { break-inside: avoid-page; }
   .group { break-inside: avoid; }
