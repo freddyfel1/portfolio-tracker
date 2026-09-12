@@ -137,6 +137,8 @@ section { display: flex; flex-direction: column; gap: 14px; }
 .filter-btn.active { border-color: var(--accent); background: var(--accent); color: var(--accentInk); }
 .spacer { flex-grow: 1; }
 .pill-input { flex: 0 1 180px; border-radius: 999px; }
+.date-filter-label { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--textDim); }
+.date-filter-label .pill-input { flex: 0 1 150px; }
 input[type="search"]::-webkit-search-cancel-button { cursor: pointer; }
 .error-text { font-size: 12px; color: var(--neg); margin-top: -8px; }
 .deleted-bar { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; justify-content: space-between; padding: 12px 18px; border-radius: 4px; border: 1px solid var(--dangerBorder); background: var(--dangerBg); }

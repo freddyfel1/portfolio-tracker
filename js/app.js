@@ -293,6 +293,8 @@ class PortfolioApp {
       tickerSearch: "",
       watchlist: false,
       hideZero: false,
+      dateFrom: "",
+      dateTo: "",
       drafts: {},
       dragging: false,
       importStatus: "",
@@ -567,6 +569,9 @@ class PortfolioApp {
   }
   toggleWatchlist() { this.state.watchlist = !this.state.watchlist; this.render(); }
   toggleHideZero() { this.state.hideZero = !this.state.hideZero; this.render(); }
+  setDateFrom(text) { this.state.dateFrom = text; this.render(); }
+  setDateTo(text) { this.state.dateTo = text; this.render(); }
+  clearDateFilter() { this.state.dateFrom = ""; this.state.dateTo = ""; this.render(); }
   restoreDeleted() {
     this.state.deleted = {};
     this.state.showRestoreBar = false;
@@ -783,6 +788,9 @@ class PortfolioApp {
     }).filter(s => s.grow > 1);
 
     const search = (this.state.tickerSearch || "").trim().toUpperCase();
+    const dateFrom = this.state.dateFrom || "";
+    const dateTo = this.state.dateTo || "";
+    const dateFilterOn = !!(dateFrom || dateTo);
     const groups = orderedNames.filter(g => {
       if (isWatch(g) && !this.state.watchlist && !search) return false;
       if (this.state.group !== "All" && g !== this.state.group) return false;
@@ -791,7 +799,8 @@ class PortfolioApp {
       const orderIdx = orderedNames.indexOf(g);
       const gl = all.filter(l => l.group === g && (isWatch(g) || l.cost >= dust || (l.value || 0) >= dust))
         .filter(l => !search || l.ticker.toUpperCase().indexOf(search) > -1)
-        .filter(l => isWatch(g) || !this.state.hideZero || l.qty > 0);
+        .filter(l => isWatch(g) || !this.state.hideZero || l.qty > 0)
+        .filter(l => !dateFilterOn || (l.buyDate && (!dateFrom || l.buyDate >= dateFrom) && (!dateTo || l.buyDate <= dateTo)));
       const rowOrder = this.orderedRowKeys(g, this.rowKeysForGroup(g));
       gl.sort((a, b) => rowOrder.indexOf(a.key) - rowOrder.indexOf(b.key));
       const c = gl.reduce((a, l) => a + l.cost, 0);
@@ -838,7 +847,7 @@ class PortfolioApp {
           plClass: l.qty && l.has ? plClass(l.pl) : "pl-flat"
         }))
       };
-    }).filter(gr => (!search && !this.state.hideZero) || gr.rows.length > 0);
+    }).filter(gr => (!search && !this.state.hideZero && !dateFilterOn) || gr.rows.length > 0);
 
     const filters = ["All"].concat(orderedNames.filter(g => !isWatch(g))).map(label => ({
       label: label === "All" ? "All holdings" : label,
@@ -918,7 +927,10 @@ class PortfolioApp {
       hasDeleted: this.state.showRestoreBar && Object.keys(deleted).length > 0,
       deletedLabel: Object.keys(deleted).length + " position" + (Object.keys(deleted).length === 1 ? "" : "s"),
       tickerSearch: this.state.tickerSearch,
-      noGroupsMessage: groups.length > 0 ? "" : (search ? "No tickers match “" + this.state.tickerSearch.trim() + "”." : (this.state.hideZero ? "No positions with a balance to show." : "")),
+      dateFrom: this.state.dateFrom,
+      dateTo: this.state.dateTo,
+      dateFilterOn: dateFilterOn,
+      noGroupsMessage: groups.length > 0 ? "" : (search ? "No tickers match “" + this.state.tickerSearch.trim() + "”." : (dateFilterOn ? "No positions bought in that date range." : (this.state.hideZero ? "No positions with a balance to show." : ""))),
       importStatus: this.state.importStatus,
       importError: this.state.importError,
       hasPreview: pv.length > 0,
@@ -1045,6 +1057,13 @@ function template(vm) {
   <section class="filters-row no-print" style="flex-direction:row;">
     ${vm.filters.map(f => `<button class="filter-btn${f.active ? " active" : ""}" data-action="set-group" data-group="${escAttr(f.group)}">${esc(f.label)}</button>`).join("")}
     <input type="search" id="ticker-search" class="field pill-input" value="${escAttr(vm.tickerSearch)}" data-action="ticker-search" placeholder="Search ticker…">
+    <label class="date-filter-label">Bought
+      <input type="date" class="field pill-input mono" value="${escAttr(vm.dateFrom)}" data-action="date-from" title="From (buy date)">
+    </label>
+    <label class="date-filter-label">to
+      <input type="date" class="field pill-input mono" value="${escAttr(vm.dateTo)}" data-action="date-to" title="To (buy date) — leave blank for present">
+    </label>
+    ${vm.dateFilterOn ? `<button class="filter-btn" data-action="clear-date-filter">Clear dates</button>` : ""}
     <div class="spacer"></div>
     <input type="text" class="field pill-input" value="${escAttr(vm.newSectionDraft)}" data-action="new-section-draft" placeholder="New section name">
     <button class="filter-btn" data-action="add-section">+ Add section</button>
@@ -1195,6 +1214,7 @@ PortfolioApp.prototype.attachEvents = function () {
       case "move-group-down": this.moveGroup(el.dataset.group, 1); break;
       case "move-row-up": this.moveRow(el.dataset.key, el.dataset.group, -1); break;
       case "move-row-down": this.moveRow(el.dataset.key, el.dataset.group, 1); break;
+      case "clear-date-filter": this.clearDateFilter(); break;
     }
   });
 
@@ -1263,6 +1283,8 @@ PortfolioApp.prototype.attachEvents = function () {
       case "toggle-auto": this.toggleAuto(); break;
       case "toggle-watchlist": this.toggleWatchlist(); break;
       case "toggle-hide-zero": this.toggleHideZero(); break;
+      case "date-from": this.setDateFrom(el.value); break;
+      case "date-to": this.setDateTo(el.value); break;
       case "key-draft": this.onKeyDraftChange(el.value); break;
       case "new-section-draft": this.onNewSectionDraftChange(el.value); break;
       case "rename-group": this.renameGroup(el.dataset.group, el.value); break;
