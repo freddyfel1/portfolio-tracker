@@ -708,13 +708,13 @@ class PortfolioApp {
   }
   deleteRow(key) { this.state.deleted[key] = true; this.armRestoreBar(); this.persist(); this.render(); }
   groupDraftChange(group, field, text) {
-    const gd = Object.assign({ ticker: "", qty: "", buy: "", price: "", error: "" }, this.state.groupDrafts[group]);
+    const gd = Object.assign({ ticker: "", qty: "", buy: "", buyDate: "", price: "", error: "" }, this.state.groupDrafts[group]);
     gd[field] = text;
     this.state.groupDrafts[group] = gd;
     this.render();
   }
   groupDraftAdd(group) {
-    const gd = Object.assign({ ticker: "", qty: "", buy: "", price: "", error: "" }, this.state.groupDrafts[group]);
+    const gd = Object.assign({ ticker: "", qty: "", buy: "", buyDate: "", price: "", error: "" }, this.state.groupDrafts[group]);
     const ticker = (gd.ticker || "").trim().toUpperCase();
     const qty = num(gd.qty);
     const buy = num(gd.buy);
@@ -722,8 +722,10 @@ class PortfolioApp {
     if (!ticker) { gd.error = "Ticker is required."; this.state.groupDrafts[group] = gd; this.render(); return; }
     if (!isFinite(qty) || qty <= 0) { gd.error = "Quantity must be a positive number."; this.state.groupDrafts[group] = gd; this.render(); return; }
     const entry = { group: group, ticker: ticker, qty: qty, buy: isFinite(buy) ? buy : 0, price: isFinite(price) ? price : null, sub: "Added manually" };
-    this.state.groupDrafts[group] = { ticker: "", qty: "", buy: "", price: "", error: "" };
+    const newKey = "c" + this.state.custom.length;
+    this.state.groupDrafts[group] = { ticker: "", qty: "", buy: "", buyDate: "", price: "", error: "" };
     this.state.custom = this.state.custom.concat([entry]);
+    if (gd.buyDate) this.state.edits[newKey] = Object.assign({}, this.state.edits[newKey], { buyDate: gd.buyDate });
     this.persist(); this.render();
   }
 
@@ -798,7 +800,7 @@ class PortfolioApp {
       const missing = gl.filter(l => !l.has).length;
       let note = gl.length + " lot" + (gl.length === 1 ? "" : "s");
       if (missing) note += " · " + missing + " needs price";
-      const gd = Object.assign({ ticker: "", qty: "", buy: "", price: "", error: "" }, this.state.groupDrafts[g]);
+      const gd = Object.assign({ ticker: "", qty: "", buy: "", buyDate: "", price: "", error: "" }, this.state.groupDrafts[g]);
       const displayName = this.state.groupNames_[g] || g;
       return {
         name: g, displayName: displayName,
@@ -1142,6 +1144,7 @@ function template(vm) {
       <input type="text" class="field add-ticker" value="${escAttr(group.draft.ticker)}" placeholder="Ticker" data-action="draft-ticker" data-group="${escAttr(group.name)}">
       <input type="text" class="field add-num" value="${escAttr(group.draft.qty)}" placeholder="Qty" data-action="draft-qty" data-group="${escAttr(group.name)}">
       <input type="text" class="field add-num" value="${escAttr(group.draft.buy)}" placeholder="Buy $" data-action="draft-buy" data-group="${escAttr(group.name)}">
+      <input type="date" class="field add-date mono" value="${escAttr(group.draft.buyDate)}" title="Buy date (optional)" data-action="draft-buy-date" data-group="${escAttr(group.name)}">
       <input type="text" class="field add-price" value="${escAttr(group.draft.price)}" placeholder="Price now (optional)" data-action="draft-price" data-group="${escAttr(group.name)}">
       <button class="btn-gold" data-action="draft-add" data-group="${escAttr(group.name)}">+ Add to ${esc(group.shortName)}</button>
       ${group.draft.error ? `<span class="error-text" style="flex-basis:100%;margin-top:0;">${esc(group.draft.error)}</span>` : ""}
@@ -1196,7 +1199,7 @@ PortfolioApp.prototype.attachEvents = function () {
   });
 
   const LOT_FIELD_ORDER = ["edit-ticker", "edit-sub", "edit-qty", "edit-buy", "edit-buy-date", "edit-price", "edit-stop-loss", "edit-target-price", "edit-sell-date", "edit-sell-price"];
-  const DRAFT_FIELD_ORDER = ["draft-ticker", "draft-qty", "draft-buy", "draft-price"];
+  const DRAFT_FIELD_ORDER = ["draft-ticker", "draft-qty", "draft-buy", "draft-buy-date", "draft-price"];
   root.addEventListener("keydown", e => {
     if (e.key !== "Enter") return;
     const el = e.target;
@@ -1276,6 +1279,7 @@ PortfolioApp.prototype.attachEvents = function () {
       case "draft-ticker": this.groupDraftChange(el.dataset.group, "ticker", el.value); break;
       case "draft-qty": this.groupDraftChange(el.dataset.group, "qty", el.value); break;
       case "draft-buy": this.groupDraftChange(el.dataset.group, "buy", el.value); break;
+      case "draft-buy-date": this.groupDraftChange(el.dataset.group, "buyDate", el.value); break;
       case "draft-price": this.groupDraftChange(el.dataset.group, "price", el.value); break;
       case "file-input": {
         const f = el.files && el.files[0];
