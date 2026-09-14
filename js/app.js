@@ -87,6 +87,7 @@ const FEED_LABELS = {
   finnhub: ["Finnhub — stocks & ETFs", "US equities and ETFs. Needs a free API key; no keyless stock feed is reachable from a browser."]
 };
 const KEY = "portfolio-tracker-v2";
+const ETRADE_BRIDGE_URL = "http://localhost:8787";
 
 /* ---------- formatting helpers ---------- */
 function money(n, dp) {
@@ -300,7 +301,11 @@ class PortfolioApp {
       importStatus: "",
       importError: false,
       preview: null,
-      previewName: ""
+      previewName: "",
+      etrade: {
+        checked: false, reachable: false, connected: false, pending: false,
+        authorizeUrl: "", verifierDraft: "", syncing: false, lastSync: "", error: ""
+      }
     };
     this.render();
     this.attachEvents();
@@ -363,6 +368,7 @@ class PortfolioApp {
       if (this.mq.addEventListener) this.mq.addEventListener("change", this.mqListener);
     }
     if (this.state.auto) { this.refresh(); this.startTimer(); }
+    this.checkEtradeStatus();
   }
   startTimer() {
     this.stopTimer();
@@ -944,8 +950,106 @@ class PortfolioApp {
       hasPreview: pv.length > 0,
       previewNote: pv.length > 8 ? "showing 8 of " + pv.length : "",
       commitLabel: "Add " + pv.length + " position" + (pv.length === 1 ? "" : "s"),
-      dragging: this.state.dragging
+      dragging: this.state.dragging,
+      etrade: this.buildEtradeViewModel()
     };
+  }
+
+  /* ---------- connected accounts (E*TRADE) ---------- */
+  buildEtradeViewModel() {
+    const e = this.state.etrade;
+    let status = "";
+    if (!e.checked) status = "Checking for the local bridge…";
+    else if (!e.reachable) status = "Bridge not running — start it with node server/etrade-server.js, then reload.";
+    else if (e.connected) status = e.lastSync ? ("Connected · last synced " + e.lastSync) : "Connected · not synced yet";
+    else if (e.pending) status = "Waiting for the verification code from E*TRADE.";
+    else status = "Not connected.";
+    const dotClass = e.syncing ? "status-checking" : (e.connected ? "status-live" : (e.pending ? "status-checking" : "status-idle"));
+    return {
+      checked: e.checked, reachable: e.reachable, connected: e.connected, pending: e.pending,
+      authorizeUrl: e.authorizeUrl, verifierDraft: e.verifierDraft, syncing: e.syncing,
+      error: e.error, status: status, dotClass: dotClass
+    };
+  }
+  async etradeFetch(path, opts) {
+    const res = await fetch(ETRADE_BRIDGE_URL + path, opts);
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(json.error || ("Request failed (" + res.status + ")"));
+    return json;
+  }
+  async checkEtradeStatus() {
+    try {
+      const json = await this.etradeFetch("/etrade/status");
+      this.state.etrade.reachable = true;
+      this.state.etrade.connected = !!json.connected;
+      this.state.etrade.error = "";
+    } catch (e) {
+      this.state.etrade.reachable = false;
+      this.state.etrade.connected = false;
+    }
+    this.state.etrade.checked = true;
+    this.render();
+  }
+  async connectEtrade() {
+    this.state.etrade.error = "";
+    try {
+      const json = await this.etradeFetch("/etrade/connect", { method: "POST" });
+      this.state.etrade.pending = true;
+      this.state.etrade.authorizeUrl = json.authorizeUrl;
+    } catch (e) {
+      this.state.etrade.error = e.message;
+    }
+    this.render();
+  }
+  setEtradeVerifierDraft(text) {
+    this.state.etrade.verifierDraft = text;
+    this.render();
+  }
+  async submitEtradeVerifier() {
+    const verifier = (this.state.etrade.verifierDraft || "").trim();
+    if (!verifier) { this.state.etrade.error = "Paste the verification code E*TRADE gave you."; this.render(); return; }
+    this.state.etrade.error = "";
+    try {
+      await this.etradeFetch("/etrade/verify", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ verifier })
+      });
+      this.state.etrade.connected = true;
+      this.state.etrade.pending = false;
+      this.state.etrade.authorizeUrl = "";
+      this.state.etrade.verifierDraft = "";
+      this.render();
+      this.syncEtrade();
+    } catch (e) {
+      this.state.etrade.error = e.message;
+      this.render();
+    }
+  }
+  async disconnectEtrade() {
+    try { await this.etradeFetch("/etrade/disconnect", { method: "POST" }); } catch (e) {}
+    this.state.etrade.connected = false;
+    this.state.etrade.pending = false;
+    this.state.etrade.lastSync = "";
+    this.render();
+  }
+  async syncEtrade() {
+    this.state.etrade.syncing = true;
+    this.state.etrade.error = "";
+    this.render();
+    try {
+      const json = await this.etradeFetch("/etrade/portfolio");
+      const fresh = (json.positions || []).map(p => ({
+        group: "Connected — E*TRADE", ticker: (p.ticker || "").toUpperCase(),
+        sub: p.account || "E*TRADE", qty: p.qty || 0, buy: p.costBasis || 0,
+        price: p.price !== null && p.price !== undefined ? p.price : null, source: "etrade"
+      }));
+      this.state.custom = this.state.custom.filter(l => l.source !== "etrade").concat(fresh);
+      this.state.etrade.lastSync = new Date().toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+      this.persist();
+    } catch (e) {
+      this.state.etrade.error = e.message;
+    }
+    this.state.etrade.syncing = false;
+    this.render();
   }
 }
 
@@ -1010,6 +1114,38 @@ function template(vm) {
         <span>${esc(vm.pinnedLabel)} held at your manual price — the feed will not overwrite them.</span>
         <button class="btn-warn" data-action="unpin-all">Let the feed take over</button>
       </div>` : ""}
+    </div>
+  </section>
+
+  <section class="no-print">
+    <div class="section-label">Connected accounts</div>
+    <div class="connector">
+      <div class="connector-top">
+        <div class="connector-left">
+          <span class="feed-dot ${vm.etrade.dotClass}" style="background:currentColor;"></span>
+          <div>
+            <div class="connector-headline">E*TRADE</div>
+            <div class="connector-sub">${esc(vm.etrade.status)}</div>
+          </div>
+        </div>
+        <div class="connector-controls">
+          ${vm.etrade.connected ? `
+            <button class="btn-accent" data-action="sync-etrade" ${vm.etrade.syncing ? "disabled" : ""}>${vm.etrade.syncing ? "Syncing…" : "Sync now"}</button>
+            <button class="btn-ghost" data-action="disconnect-etrade">Disconnect</button>
+          ` : (vm.etrade.reachable && !vm.etrade.pending ? `
+            <button class="btn-gold" data-action="connect-etrade">Connect</button>
+          ` : "")}
+        </div>
+      </div>
+      ${vm.etrade.pending ? `
+      <div class="key-row">
+        <span class="key-label">1. <a href="${escAttr(vm.etrade.authorizeUrl)}" target="_blank" rel="noopener">Open E*TRADE to approve access ↗</a></span>
+        <span class="key-label">2. Paste the code it gives you:</span>
+        <input type="text" class="field key-input" value="${escAttr(vm.etrade.verifierDraft)}" data-action="etrade-verifier-draft" placeholder="Verification code">
+        <button class="btn-gold" data-action="submit-etrade-verifier">Submit code</button>
+      </div>` : ""}
+      ${vm.etrade.error ? `<div class="error-text">${esc(vm.etrade.error)}</div>` : ""}
+      ${!vm.etrade.reachable && vm.etrade.checked ? `<div class="connector-sub">Positions you sync land in a "Connected — E*TRADE" section below, editable like any other position.</div>` : ""}
     </div>
   </section>
 
@@ -1213,6 +1349,10 @@ PortfolioApp.prototype.attachEvents = function () {
       case "clear-key": this.clearKey(); break;
       case "unpin-all": this.unpinAll(); break;
       case "unpin-ticker": this.unpinTicker(el.dataset.ticker); break;
+      case "connect-etrade": this.connectEtrade(); break;
+      case "submit-etrade-verifier": this.submitEtradeVerifier(); break;
+      case "sync-etrade": this.syncEtrade(); break;
+      case "disconnect-etrade": this.disconnectEtrade(); break;
       case "cancel-import": this.cancelImport(); break;
       case "commit-import": this.commitImport(); break;
       case "set-group": this.setGroupFilter(el.dataset.group); break;
@@ -1283,6 +1423,13 @@ PortfolioApp.prototype.attachEvents = function () {
       const saveBtn = root.querySelector('[data-action="save-key"]');
       if (saveBtn) saveBtn.click();
     }
+
+    if (action === "etrade-verifier-draft") {
+      e.preventDefault();
+      el.blur();
+      const submitBtn = root.querySelector('[data-action="submit-etrade-verifier"]');
+      if (submitBtn) submitBtn.click();
+    }
   });
 
   root.addEventListener("change", e => {
@@ -1295,6 +1442,7 @@ PortfolioApp.prototype.attachEvents = function () {
       case "toggle-hide-zero": this.toggleHideZero(); break;
       case "date-from": this.setDateFrom(el.value); break;
       case "date-to": this.setDateTo(el.value); break;
+      case "etrade-verifier-draft": this.setEtradeVerifierDraft(el.value); break;
       case "key-draft": this.onKeyDraftChange(el.value); break;
       case "new-section-draft": this.onNewSectionDraftChange(el.value); break;
       case "rename-group": this.renameGroup(el.dataset.group, el.value); break;
