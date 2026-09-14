@@ -384,14 +384,15 @@ class PortfolioApp {
       const ticker = e && e.ticker !== undefined ? e.ticker : baseTicker;
       live[ticker] = true;
     });
-    return Object.keys(live).filter(t => FEED_MAP[t]);
+    return Object.keys(live);
   }
 
   async fetchCoinbase(tickers) {
     const got = {}, failed = [];
     await Promise.all(tickers.map(async t => {
       try {
-        const res = await fetch("https://api.coinbase.com/v2/prices/" + FEED_MAP[t][1] + "/spot", { cache: "no-store" });
+        const pair = FEED_MAP[t] ? FEED_MAP[t][1] : (t + "-USD");
+        const res = await fetch("https://api.coinbase.com/v2/prices/" + pair + "/spot", { cache: "no-store" });
         if (!res.ok) throw new Error(String(res.status));
         const json = await res.json();
         const n = parseFloat(json && json.data && json.data.amount);
@@ -427,7 +428,8 @@ class PortfolioApp {
     let error = "";
     await Promise.all(tickers.map(async t => {
       try {
-        const res = await fetch("https://finnhub.io/api/v1/quote?symbol=" + FEED_MAP[t][1] + "&token=" + encodeURIComponent(key), { cache: "no-store" });
+        const symbol = FEED_MAP[t] ? FEED_MAP[t][1] : t;
+        const res = await fetch("https://finnhub.io/api/v1/quote?symbol=" + symbol + "&token=" + encodeURIComponent(key), { cache: "no-store" });
         if (!res.ok) { if (res.status === 401 || res.status === 403) error = "key rejected"; throw new Error(String(res.status)); }
         const json = await res.json();
         const n = parseFloat(json && json.c);
@@ -441,8 +443,8 @@ class PortfolioApp {
     if (this.state.refreshing) return;
     this.state.refreshing = true; this.render();
     const needed = this.neededTickers();
-    const cb = needed.filter(t => FEED_MAP[t][0] === "coinbase");
-    const eq = needed.filter(t => FEED_MAP[t][0] === "finnhub");
+    const cb = needed.filter(t => !FEED_MAP[t] || FEED_MAP[t][0] === "coinbase");
+    const eq = needed.filter(t => !FEED_MAP[t] || FEED_MAP[t][0] === "finnhub");
     const stamp = new Date().toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit", second: "2-digit" });
     const [cbRes, eqRes] = await Promise.all([this.fetchCoinbase(cb), this.fetchFinnhub(eq, this.state.apiKey)]);
     const gkRes = await this.fetchGecko(cbRes.failed);
