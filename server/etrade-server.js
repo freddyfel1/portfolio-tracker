@@ -36,7 +36,9 @@ const { URL } = require("url");
 function loadEnvFile(file) {
   const out = {};
   if (!fs.existsSync(file)) return out;
-  for (const line of fs.readFileSync(file, "utf8").split("\n")) {
+  let content = fs.readFileSync(file, "utf8");
+  if (content.charCodeAt(0) === 0xFEFF) content = content.slice(1); // strip a UTF-8 BOM (common on Windows-saved files)
+  for (const line of content.split(/\r?\n/)) {
     const m = line.match(/^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$/);
     if (!m) continue;
     out[m[1]] = m[2].replace(/^["']|["']$/g, "");
@@ -44,7 +46,8 @@ function loadEnvFile(file) {
   return out;
 }
 
-const envFile = loadEnvFile(path.join(__dirname, ".env"));
+const ENV_PATH = path.join(__dirname, ".env");
+const envFile = loadEnvFile(ENV_PATH);
 function cfg(name, fallback) {
   return process.env[name] || envFile[name] || fallback;
 }
@@ -59,6 +62,15 @@ const SESSION_FILE = path.join(__dirname, ".etrade-session.json");
 if (!CONSUMER_KEY || !CONSUMER_SECRET) {
   console.error("Missing ETRADE_CONSUMER_KEY / ETRADE_CONSUMER_SECRET.");
   console.error("Copy server/.env.example to server/.env and fill in your E*TRADE developer keys, then run this again.");
+  console.error("");
+  console.error("Diagnostics:");
+  console.error("  Looking for .env at: " + ENV_PATH);
+  console.error("  That file exists: " + fs.existsSync(ENV_PATH));
+  console.error("  Variable names found in it: " + (Object.keys(envFile).join(", ") || "(none)"));
+  console.error("  ETRADE_CONSUMER_KEY length found: " + (envFile.ETRADE_CONSUMER_KEY || "").length);
+  console.error("  ETRADE_CONSUMER_SECRET length found: " + (envFile.ETRADE_CONSUMER_SECRET || "").length);
+  console.error("  Same vars set in this terminal's environment (these WIN over .env if present): "
+    + ["ETRADE_CONSUMER_KEY", "ETRADE_CONSUMER_SECRET"].filter(k => process.env[k] !== undefined).join(", ") || "(none)");
   process.exit(1);
 }
 
