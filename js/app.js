@@ -468,11 +468,13 @@ class PortfolioApp {
   }
 
   editLot(key, field, draftKey, text) {
-    this.state.drafts[draftKey] = text;
     const n = num(text);
     if (isFinite(n) && n >= 0) {
       this.state.edits[key] = Object.assign({}, this.state.edits[key], { [field]: n });
+      delete this.state.drafts[draftKey];
       this.persist();
+    } else {
+      this.state.drafts[draftKey] = text;
     }
     this.render();
   }
@@ -691,12 +693,14 @@ class PortfolioApp {
     this.render();
   }
   editPrice(ticker, text) {
-    this.state.drafts[ticker] = text;
     const n = num(text);
     if (isFinite(n)) {
       this.state.prices[ticker] = n;
       this.state.pinned[ticker] = true;
+      delete this.state.drafts[ticker];
       this.persist();
+    } else {
+      this.state.drafts[ticker] = text;
     }
     this.render();
   }
