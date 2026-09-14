@@ -50,7 +50,7 @@ button, input { font-family: inherit; }
 button { border: none; background: none; }
 
 .page { min-height: 100vh; padding: 40px 32px 72px; }
-.wrap { max-width: 1432px; margin: 0 auto; display: flex; flex-direction: column; gap: 30px; }
+.wrap { max-width: 1624px; margin: 0 auto; display: flex; flex-direction: column; gap: 30px; }
 
 /* header */
 .header { display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-end; justify-content: space-between; border-bottom: 1px solid var(--border); padding-bottom: 22px; }
