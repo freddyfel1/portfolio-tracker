@@ -656,6 +656,17 @@ class PortfolioApp {
     }
     this.render();
   }
+  editSellQty(key, text) {
+    const n = num(text);
+    if (isFinite(n) && n >= 0) {
+      this.state.edits[key] = Object.assign({}, this.state.edits[key], { sellQty: n });
+      delete this.state.drafts["sq" + key];
+      this.persist();
+    } else {
+      this.state.drafts["sq" + key] = text;
+    }
+    this.render();
+  }
   editTargetPrice(key, text) {
     const n = num(text);
     if (isFinite(n) && n >= 0) {
@@ -748,6 +759,7 @@ class PortfolioApp {
         const buyDate = e.buyDate !== undefined ? e.buyDate : "";
         const sellDate = e.sellDate !== undefined ? e.sellDate : "";
         const sellPrice = e.sellPrice !== undefined ? e.sellPrice : null;
+        const sellQty = e.sellQty !== undefined ? e.sellQty : null;
         const targetPrice = e.targetPrice !== undefined ? e.targetPrice : null;
         const feed = this.state.live[ticker];
         const usingFeed = !!feed && !this.state.pinned[ticker];
@@ -755,7 +767,7 @@ class PortfolioApp {
         const has = price !== null && price !== undefined && isFinite(price);
         const cost = qty * buy;
         const edited = e.qty !== undefined || e.buy !== undefined;
-        return { key, group, ticker, sub, qty, buy, buyDate, sellDate, sellPrice, targetPrice, price, has, edited, cost, usingFeed, feedAt: feed ? feed.at : "", feedSource: feed ? feed.source : "", pinned: !!this.state.pinned[ticker], value: has ? qty * price : null, pl: has ? qty * price - cost : null };
+        return { key, group, ticker, sub, qty, buy, buyDate, sellDate, sellPrice, sellQty, targetPrice, price, has, edited, cost, usingFeed, feedAt: feed ? feed.at : "", feedSource: feed ? feed.source : "", pinned: !!this.state.pinned[ticker], value: has ? qty * price : null, pl: has ? qty * price - cost : null };
       });
 
     const isWatch = g => g.indexOf("Watchlist") === 0;
@@ -830,9 +842,10 @@ class PortfolioApp {
           priceTitle: l.usingFeed ? ("Live from " + l.feedSource + " at " + l.feedAt + " — type a value to pin your own") : (l.pinned ? "Pinned manual price — the feed will not overwrite it" : "Spreadsheet price — no live feed for this ticker"),
           targetPriceInput: this.state.drafts["tp" + l.key] !== undefined ? this.state.drafts["tp" + l.key] : (l.targetPrice !== null ? priceMoney(l.targetPrice) : ""),
           sellDateInput: l.sellDate,
+          sellQtyInput: this.state.drafts["sq" + l.key] !== undefined ? this.state.drafts["sq" + l.key] : (l.sellQty !== null ? qtyFmt(l.sellQty) : ""),
           sellPriceInput: this.state.drafts["sp" + l.key] !== undefined ? this.state.drafts["sp" + l.key] : (l.sellPrice !== null ? priceMoney(l.sellPrice) : ""),
           value: l.qty ? money(l.value) : "—",
-          sellValue: l.qty && l.sellPrice !== null ? money(l.qty * l.sellPrice) : "—",
+          sellValue: l.sellPrice !== null && (l.sellQty !== null ? l.sellQty : l.qty) ? money((l.sellQty !== null ? l.sellQty : l.qty) * l.sellPrice) : "—",
           pl: l.qty && l.has ? signed(l.pl) : "—",
           ret: l.qty && l.has && l.cost ? (l.pl / l.cost * 100).toFixed(1) + "%" : "—",
           plClass: l.qty && l.has ? plClass(l.pl) : "pl-flat"
@@ -1099,7 +1112,7 @@ function template(vm) {
     <div class="rows-scroll">
     <div class="cols col-head">
       <div>Asset</div><div class="right">Qty</div><div class="right">Buy Price</div><div class="right">Buy Date</div><div class="right">Cost</div>
-      <div class="right">Price now</div><div class="right">Target Price</div><div class="right">Sell Date</div><div class="right">Sell Price</div><div class="right">Value</div><div class="right">Sell Value</div><div class="right">P/L</div><div class="right">Return</div><div style="text-align:center;">Del</div>
+      <div class="right">Price now</div><div class="right">Target Price</div><div class="right">Sell Date</div><div class="right">Sell Qty</div><div class="right">Sell Price</div><div class="right">Value</div><div class="right">Sell Value</div><div class="right">P/L</div><div class="right">Return</div><div style="text-align:center;">Del</div>
     </div>
 
     ${group.rows.map(row => `
@@ -1135,6 +1148,9 @@ function template(vm) {
         <input type="date" class="lot-input lot-date-input" value="${escAttr(row.sellDateInput)}" title="Date this lot was sold" data-action="edit-sell-date" data-key="${escAttr(row.key)}">
       </div>
       <div class="lot-input-cell">
+        <input type="text" class="lot-input" value="${escAttr(row.sellQtyInput)}" title="Quantity sold — defaults to the full position if left blank" data-action="edit-sell-qty" data-key="${escAttr(row.key)}">
+      </div>
+      <div class="lot-input-cell">
         <input type="text" class="lot-input" value="${escAttr(row.sellPriceInput)}" title="Price this lot was sold at" data-action="edit-sell-price" data-key="${escAttr(row.key)}">
       </div>
       <div class="lot-static right">${row.value}</div>
@@ -1168,7 +1184,7 @@ function template(vm) {
       <li>Linqto positions (Ripple, Polysign) are marked at <strong>$0</strong> — the spreadsheet notes Linqto filed for bankruptcy. That is a placeholder, not a recovery estimate.</li>
       <li>Several prices in the sheet were broken lookups (VET, PEPE, XCN, ALGO at 0; Cristina's XRP at $0.02 against $1.42 in the main wallet). The live feed now supplies those, so they price like every other lot. Anything with no source at all — silver, COPI, imported rows without a price column — is flagged <strong>needs price</strong> and stays out of allocation until you type one.</li>
       <li>Realized P/L is not carried over — the clean sheet records $0 realized to date.</li>
-      <li>Buy Date, Sell Date, Sell Price, and Target Price are optional manual record-keeping fields per lot; Sell Value is simply qty × Sell Price. None of them affect cost basis, current value, or any total — nothing is auto-marked "sold" and no alert fires when price crosses Target Price.</li>
+      <li>Buy Date, Sell Date, Sell Qty, Sell Price, and Target Price are optional manual record-keeping fields per lot; Sell Value is Sell Qty × Sell Price, or the full position's qty × Sell Price if Sell Qty is left blank. None of them affect cost basis, current value, or any total — nothing is auto-marked "sold" and no alert fires when price crosses Target Price.</li>
     </ul>
   </section>
 </div></div>`;
@@ -1206,7 +1222,7 @@ PortfolioApp.prototype.attachEvents = function () {
     }
   });
 
-  const LOT_FIELD_ORDER = ["edit-ticker", "edit-sub", "edit-qty", "edit-buy", "edit-buy-date", "edit-price", "edit-target-price", "edit-sell-date", "edit-sell-price"];
+  const LOT_FIELD_ORDER = ["edit-ticker", "edit-sub", "edit-qty", "edit-buy", "edit-buy-date", "edit-price", "edit-target-price", "edit-sell-date", "edit-sell-qty", "edit-sell-price"];
   const DRAFT_FIELD_ORDER = ["draft-ticker", "draft-qty", "draft-buy", "draft-buy-date", "draft-price"];
   root.addEventListener("keydown", e => {
     if (e.key !== "Enter") return;
@@ -1283,6 +1299,7 @@ PortfolioApp.prototype.attachEvents = function () {
       case "edit-sub": this.editSub(el.dataset.key, el.value); break;
       case "edit-price": this.editPrice(el.dataset.ticker, el.value); break;
       case "edit-sell-date": this.editSellDate(el.dataset.key, el.value); break;
+      case "edit-sell-qty": this.editSellQty(el.dataset.key, el.value); break;
       case "edit-sell-price": this.editSellPrice(el.dataset.key, el.value); break;
       case "edit-target-price": this.editTargetPrice(el.dataset.key, el.value); break;
       case "draft-ticker": this.groupDraftChange(el.dataset.group, "ticker", el.value); break;
