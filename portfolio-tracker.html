@@ -190,6 +190,10 @@ input[type="search"]::-webkit-search-cancel-button { cursor: pointer; }
 .lot-static { padding: 11px 14px; font-family: 'IBM Plex Mono', monospace; font-size: 12px; color: var(--textBody); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .price-input.live { border-color: var(--livePrice); }
 .price-input.pinned { border-color: var(--pinPrice); }
+.price-cell { display: flex; align-items: center; gap: 4px; }
+.price-cell .price-input { flex: 1; min-width: 0; }
+.unpin-btn { flex: 0 0 auto; width: 18px; height: 18px; display: flex; align-items: center; justify-content: center; font-size: 12px; line-height: 1; border-radius: 3px; cursor: pointer; border: 1px solid var(--pinPrice); background: transparent; color: var(--pinPrice); }
+.unpin-btn:hover { background: var(--pinPrice); color: var(--panel); }
 .del-cell { padding: 8px 4px; display: flex; justify-content: center; }
 .del-btn { width: 26px; height: 26px; display: flex; align-items: center; justify-content: center; font-size: 14px; line-height: 1; border-radius: 3px; cursor: pointer; border: 1px solid var(--borderSoft); background: transparent; color: var(--textFaint); }
 .del-btn:hover { border-color: var(--neg); color: var(--negText); background: var(--negWash); }
@@ -787,6 +791,7 @@ class PortfolioApp {
   }
   clearKey() { this.state.keyDraft = ""; this.state.apiKey = ""; this.persist(); this.render(); }
   unpinAll() { this.state.pinned = {}; this.persist(); this.render(); this.refresh(); }
+  unpinTicker(ticker) { delete this.state.pinned[ticker]; this.persist(); this.render(); this.refresh(); }
   setDragging(on) { if (this.state.dragging !== on) { this.state.dragging = on; this.render(); } }
   cancelImport() { this.state.preview = null; this.state.importStatus = ""; this.render(); }
   commitImport() {
@@ -1085,6 +1090,7 @@ class PortfolioApp {
           priceInput: this.state.drafts[l.ticker] !== undefined ? this.state.drafts[l.ticker] : priceMoney(l.price),
           priceClass: l.usingFeed ? "live" : (l.pinned ? "pinned" : ""),
           priceTitle: l.usingFeed ? ("Live from " + l.feedSource + " at " + l.feedAt + " — type a value to pin your own") : (l.pinned ? "Pinned manual price — the feed will not overwrite it" : "Spreadsheet price — no live feed for this ticker"),
+          pinned: l.pinned,
           targetPriceInput: this.state.drafts["tp" + l.key] !== undefined ? this.state.drafts["tp" + l.key] : (l.targetPrice !== null ? priceMoney(l.targetPrice) : ""),
           sellDateInput: l.sellDate,
           sellQtyInput: this.state.drafts["sq" + l.key] !== undefined ? this.state.drafts["sq" + l.key] : (l.sellQty !== null ? qtyFmt(l.sellQty) : ""),
@@ -1383,8 +1389,9 @@ function template(vm) {
         <input type="date" class="lot-input lot-date-input" value="${escAttr(row.buyDateInput)}" title="Date this lot was bought" data-action="edit-buy-date" data-key="${escAttr(row.key)}">
       </div>
       <div class="lot-static right">${row.cost}</div>
-      <div class="lot-input-cell">
+      <div class="lot-input-cell price-cell">
         <input type="text" class="lot-input price-input ${row.priceClass}" value="${escAttr(row.priceInput)}" title="${escAttr(row.priceTitle)}" data-action="edit-price" data-ticker="${escAttr(row.ticker)}" data-key="${escAttr(row.key)}">
+        ${row.pinned ? `<button class="unpin-btn" title="Unpin — let the live feed update ${esc(row.ticker)} again" data-action="unpin-ticker" data-ticker="${escAttr(row.ticker)}">×</button>` : ""}
       </div>
       <div class="lot-input-cell">
         <input type="text" class="lot-input" value="${escAttr(row.targetPriceInput)}" title="Price at which you'd exit to take profit" data-action="edit-target-price" data-key="${escAttr(row.key)}">
@@ -1452,6 +1459,7 @@ PortfolioApp.prototype.attachEvents = function () {
       case "save-key": this.saveKey(); break;
       case "clear-key": this.clearKey(); break;
       case "unpin-all": this.unpinAll(); break;
+      case "unpin-ticker": this.unpinTicker(el.dataset.ticker); break;
       case "cancel-import": this.cancelImport(); break;
       case "commit-import": this.commitImport(); break;
       case "set-group": this.setGroupFilter(el.dataset.group); break;

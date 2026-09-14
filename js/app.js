@@ -544,6 +544,7 @@ class PortfolioApp {
   }
   clearKey() { this.state.keyDraft = ""; this.state.apiKey = ""; this.persist(); this.render(); }
   unpinAll() { this.state.pinned = {}; this.persist(); this.render(); this.refresh(); }
+  unpinTicker(ticker) { delete this.state.pinned[ticker]; this.persist(); this.render(); this.refresh(); }
   setDragging(on) { if (this.state.dragging !== on) { this.state.dragging = on; this.render(); } }
   cancelImport() { this.state.preview = null; this.state.importStatus = ""; this.render(); }
   commitImport() {
@@ -842,6 +843,7 @@ class PortfolioApp {
           priceInput: this.state.drafts[l.ticker] !== undefined ? this.state.drafts[l.ticker] : priceMoney(l.price),
           priceClass: l.usingFeed ? "live" : (l.pinned ? "pinned" : ""),
           priceTitle: l.usingFeed ? ("Live from " + l.feedSource + " at " + l.feedAt + " — type a value to pin your own") : (l.pinned ? "Pinned manual price — the feed will not overwrite it" : "Spreadsheet price — no live feed for this ticker"),
+          pinned: l.pinned,
           targetPriceInput: this.state.drafts["tp" + l.key] !== undefined ? this.state.drafts["tp" + l.key] : (l.targetPrice !== null ? priceMoney(l.targetPrice) : ""),
           sellDateInput: l.sellDate,
           sellQtyInput: this.state.drafts["sq" + l.key] !== undefined ? this.state.drafts["sq" + l.key] : (l.sellQty !== null ? qtyFmt(l.sellQty) : ""),
@@ -1140,8 +1142,9 @@ function template(vm) {
         <input type="date" class="lot-input lot-date-input" value="${escAttr(row.buyDateInput)}" title="Date this lot was bought" data-action="edit-buy-date" data-key="${escAttr(row.key)}">
       </div>
       <div class="lot-static right">${row.cost}</div>
-      <div class="lot-input-cell">
+      <div class="lot-input-cell price-cell">
         <input type="text" class="lot-input price-input ${row.priceClass}" value="${escAttr(row.priceInput)}" title="${escAttr(row.priceTitle)}" data-action="edit-price" data-ticker="${escAttr(row.ticker)}" data-key="${escAttr(row.key)}">
+        ${row.pinned ? `<button class="unpin-btn" title="Unpin — let the live feed update ${esc(row.ticker)} again" data-action="unpin-ticker" data-ticker="${escAttr(row.ticker)}">×</button>` : ""}
       </div>
       <div class="lot-input-cell">
         <input type="text" class="lot-input" value="${escAttr(row.targetPriceInput)}" title="Price at which you'd exit to take profit" data-action="edit-target-price" data-key="${escAttr(row.key)}">
@@ -1209,6 +1212,7 @@ PortfolioApp.prototype.attachEvents = function () {
       case "save-key": this.saveKey(); break;
       case "clear-key": this.clearKey(); break;
       case "unpin-all": this.unpinAll(); break;
+      case "unpin-ticker": this.unpinTicker(el.dataset.ticker); break;
       case "cancel-import": this.cancelImport(); break;
       case "commit-import": this.commitImport(); break;
       case "set-group": this.setGroupFilter(el.dataset.group); break;
