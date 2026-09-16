@@ -579,6 +579,13 @@ class PortfolioApp {
     this.state.extraGroups = this.state.extraGroups.concat([name]);
     this.persist(); this.render();
   }
+  deleteSection(name) {
+    if (this.rowKeysForGroup(name).length > 0) return; // safety: only ever remove an empty section
+    this.state.extraGroups = this.state.extraGroups.filter(g => g !== name);
+    if (this.state.groupOrder) this.state.groupOrder = this.state.groupOrder.filter(g => g !== name);
+    if (this.state.groupNames_ && name in this.state.groupNames_) delete this.state.groupNames_[name];
+    this.persist(); this.render();
+  }
   toggleWatchlist() { this.state.watchlist = !this.state.watchlist; this.render(); }
   toggleHideZero() { this.state.hideZero = !this.state.hideZero; this.render(); }
   setDateFrom(text) { this.state.dateFrom = text; this.render(); }
@@ -829,8 +836,9 @@ class PortfolioApp {
       if (missing) note += " · " + missing + " needs price";
       const gd = Object.assign({ ticker: "", qty: "", buy: "", buyDate: "", price: "", error: "" }, this.state.groupDrafts[g]);
       const displayName = this.state.groupNames_[g] || g;
+      const isEmpty = this.rowKeysForGroup(g).length === 0;
       return {
-        name: g, displayName: displayName,
+        name: g, displayName: displayName, isEmpty: isEmpty,
         shortName: displayName.replace(/^(Crypto|Stocks|Watchlist|Imported)\s*[—-]\s*/, ""),
         canMoveUp: orderIdx > 0, canMoveDown: orderIdx < orderedNames.length - 1,
         color: GROUP_COLORS[g] || IMPORT_COLOR, note: note, draft: gd,
@@ -1305,6 +1313,7 @@ function template(vm) {
         <span class="cost">cost ${group.cost}</span>
         <span class="value">value ${group.value}</span>
         <span class="${group.plClass}">${group.pl} · ${group.ret}</span>
+        ${group.isEmpty ? `<button class="del-btn" title="Remove this empty section" data-action="delete-section" data-group="${escAttr(group.name)}">×</button>` : ""}
       </div>
     </div>
 
@@ -1419,6 +1428,7 @@ PortfolioApp.prototype.attachEvents = function () {
       case "add-section": this.addSection(); break;
       case "restore-deleted": this.restoreDeleted(); break;
       case "delete-row": this.deleteRow(el.dataset.key); break;
+      case "delete-section": this.deleteSection(el.dataset.group); break;
       case "draft-add": this.groupDraftAdd(el.dataset.group); break;
       case "move-group-up": this.moveGroup(el.dataset.group, -1); break;
       case "move-group-down": this.moveGroup(el.dataset.group, 1); break;
