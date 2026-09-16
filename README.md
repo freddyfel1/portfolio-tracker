@@ -62,6 +62,9 @@ your E*TRADE credentials; it only talks to this server on `localhost`.
    "Connected — E*TRADE" section, editable like any other position. Disconnecting
    or re-syncing never deletes positions already on the page — it only
    replaces the E*TRADE-sourced ones with the latest sync.
+6. Click **View transactions** for a read-only log of past trades and
+   dividends (date, type, ticker, qty, price, amount) — separate from your
+   positions above; it doesn't affect cost basis, value, or any total.
 
 **Notes:**
 

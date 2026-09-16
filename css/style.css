@@ -100,6 +100,12 @@ section { display: flex; flex-direction: column; gap: 14px; }
 .pinned-bar { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; padding: 11px 14px; border-radius: 4px; border: 1px solid var(--warnBorder); background: var(--warnBg); }
 .pinned-bar span { font-size: 12px; color: var(--textStrong); }
 .btn-warn { font-size: 12px; font-weight: 500; padding: 7px 13px; border-radius: 999px; cursor: pointer; border: 1px solid var(--warnLine); background: transparent; color: var(--textStrong); }
+.tx-panel { display: flex; flex-direction: column; gap: 8px; }
+.tx-table { display: flex; flex-direction: column; border: 1px solid var(--borderSoft); border-radius: 4px; max-height: 320px; overflow-y: auto; }
+.tx-row { display: grid; grid-template-columns: 110px 100px 70px 70px 90px 100px; gap: 8px; padding: 7px 12px; font-size: 12px; border-bottom: 1px solid var(--borderFaint); color: var(--textBody); }
+.tx-row:last-child { border-bottom: none; }
+.tx-row.tx-head { position: sticky; top: 0; background: var(--panelAlt); font-family: 'IBM Plex Mono', monospace; font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--textMute); }
+.tx-row .right { text-align: right; }
 
 /* import */
 .dropzone { display: flex; flex-direction: column; gap: 16px; padding: 26px; border-radius: 4px; border: 1px dashed var(--borderMid); background: var(--rowBg); }

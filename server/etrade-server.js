@@ -198,13 +198,46 @@ async function fetchAllPositions(accessToken, accessSecret) {
           account: acct.accountDesc || acct.accountId || "E*TRADE",
           ticker: symbol,
           qty: Number(p.quantity) || 0,
-          costBasis: p.pricePaid !== undefined ? Number(p.pricePaid) : null,
-          price: p.Quick && p.Quick.lastTrade !== undefined ? Number(p.Quick.lastTrade) : null
+          costBasis: p.pricePaid !== undefined && p.pricePaid !== null ? Number(p.pricePaid) : null,
+          price: p.Quick && p.Quick.lastTrade !== undefined && p.Quick.lastTrade !== null ? Number(p.Quick.lastTrade) : null
         });
       }
     }
   }
   return positions;
+}
+
+async function fetchAllTransactions(accessToken, accessSecret) {
+  const accountsRes = await apiGet("/v1/accounts/list.json", accessToken, accessSecret);
+  const accounts = asArray(accountsRes.AccountListResponse && accountsRes.AccountListResponse.Accounts && accountsRes.AccountListResponse.Accounts.Account);
+  const transactions = [];
+  for (const acct of accounts) {
+    if (acct.accountStatus && acct.accountStatus !== "ACTIVE") continue;
+    let txRes;
+    try {
+      txRes = await apiGet("/v1/accounts/" + acct.accountIdKey + "/transactions.json", accessToken, accessSecret);
+    } catch (e) {
+      continue; // an account with no transaction history (or unsupported) shouldn't sink the whole request
+    }
+    const tlr = txRes.TransactionListResponse;
+    for (const t of asArray(tlr && tlr.Transaction)) {
+      const brokerage = t.brokerage || {};
+      const product = brokerage.product || {};
+      const dateMs = t.transactionDate || t.postDate;
+      transactions.push({
+        account: acct.accountDesc || acct.accountId || "E*TRADE",
+        date: dateMs ? new Date(dateMs).toISOString() : null,
+        type: t.transactionType || "Transaction",
+        ticker: product.symbol || "",
+        qty: brokerage.quantity !== undefined && brokerage.quantity !== null ? Number(brokerage.quantity) : null,
+        price: brokerage.price !== undefined && brokerage.price !== null ? Number(brokerage.price) : null,
+        amount: t.amount !== undefined && t.amount !== null ? Number(t.amount) : null,
+        description: t.description || ""
+      });
+    }
+  }
+  transactions.sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+  return transactions;
 }
 
 /* ---------- tiny HTTP API for the tracker's browser page ---------- */
@@ -273,6 +306,13 @@ const server = http.createServer(async (req, res) => {
       if (!session.accessToken) return sendJson(res, 401, { error: "Not connected." });
       const positions = await fetchAllPositions(session.accessToken, session.accessSecret);
       return sendJson(res, 200, { positions });
+    }
+
+    if (u.pathname === "/etrade/transactions" && req.method === "GET") {
+      const session = loadSession();
+      if (!session.accessToken) return sendJson(res, 401, { error: "Not connected." });
+      const transactions = await fetchAllTransactions(session.accessToken, session.accessSecret);
+      return sendJson(res, 200, { transactions });
     }
 
     return sendJson(res, 404, { error: "Unknown endpoint." });

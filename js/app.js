@@ -304,7 +304,8 @@ class PortfolioApp {
       previewName: "",
       etrade: {
         checked: false, reachable: false, connected: false, pending: false,
-        authorizeUrl: "", verifierDraft: "", syncing: false, lastSync: "", error: ""
+        authorizeUrl: "", verifierDraft: "", syncing: false, lastSync: "", error: "",
+        showTransactions: false, transactions: [], transactionsLoading: false, transactionsError: ""
       }
     };
     this.render();
@@ -969,10 +970,22 @@ class PortfolioApp {
     else if (e.pending) status = "Waiting for the verification code from E*TRADE.";
     else status = "Not connected.";
     const dotClass = e.syncing ? "status-checking" : (e.connected ? "status-live" : (e.pending ? "status-checking" : "status-idle"));
+    const transactionRows = e.transactions.map(t => ({
+      date: t.date ? new Date(t.date).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" }) : "—",
+      type: t.type || "—",
+      ticker: t.ticker || "—",
+      qty: t.qty !== null && t.qty !== undefined ? qtyFmt(t.qty) : "—",
+      price: t.price !== null && t.price !== undefined ? priceMoney(t.price) : "—",
+      amount: t.amount !== null && t.amount !== undefined ? signed(t.amount) : "—",
+      account: t.account || ""
+    }));
     return {
       checked: e.checked, reachable: e.reachable, connected: e.connected, pending: e.pending,
       authorizeUrl: e.authorizeUrl, verifierDraft: e.verifierDraft, syncing: e.syncing,
-      error: e.error, status: status, dotClass: dotClass
+      error: e.error, status: status, dotClass: dotClass,
+      showTransactions: e.showTransactions, transactionsLoading: e.transactionsLoading,
+      transactionsError: e.transactionsError, transactionRows: transactionRows,
+      hasTransactions: transactionRows.length > 0
     };
   }
   async etradeFetch(path, opts) {
@@ -1055,6 +1068,25 @@ class PortfolioApp {
     this.state.etrade.syncing = false;
     this.render();
   }
+  toggleEtradeTransactions() {
+    this.state.etrade.showTransactions = !this.state.etrade.showTransactions;
+    const shouldLoad = this.state.etrade.showTransactions && !this.state.etrade.transactions.length && !this.state.etrade.transactionsLoading;
+    this.render();
+    if (shouldLoad) this.loadEtradeTransactions();
+  }
+  async loadEtradeTransactions() {
+    this.state.etrade.transactionsLoading = true;
+    this.state.etrade.transactionsError = "";
+    this.render();
+    try {
+      const json = await this.etradeFetch("/etrade/transactions");
+      this.state.etrade.transactions = json.transactions || [];
+    } catch (e) {
+      this.state.etrade.transactionsError = e.message;
+    }
+    this.state.etrade.transactionsLoading = false;
+    this.render();
+  }
 }
 
 /* ---------- template ---------- */
@@ -1135,6 +1167,7 @@ function template(vm) {
         <div class="connector-controls">
           ${vm.etrade.connected ? `
             <button class="btn-accent" data-action="sync-etrade" ${vm.etrade.syncing ? "disabled" : ""}>${vm.etrade.syncing ? "Syncing…" : "Sync now"}</button>
+            <button class="btn-ghost" data-action="toggle-etrade-transactions">${vm.etrade.showTransactions ? "Hide transactions" : "View transactions"}</button>
             <button class="btn-ghost" data-action="disconnect-etrade">Disconnect</button>
           ` : (vm.etrade.reachable && !vm.etrade.pending ? `
             <button class="btn-gold" data-action="connect-etrade">Connect</button>
@@ -1149,6 +1182,22 @@ function template(vm) {
         <button class="btn-gold" data-action="submit-etrade-verifier">Submit code</button>
       </div>` : ""}
       ${vm.etrade.error ? `<div class="error-text">${esc(vm.etrade.error)}</div>` : ""}
+      ${vm.etrade.showTransactions ? `
+      <div class="tx-panel">
+        ${vm.etrade.transactionsLoading ? `<div class="connector-sub">Loading transactions…</div>` : ""}
+        ${vm.etrade.transactionsError ? `<div class="error-text">${esc(vm.etrade.transactionsError)}</div>` : ""}
+        ${!vm.etrade.transactionsLoading && !vm.etrade.transactionsError && !vm.etrade.hasTransactions ? `<div class="connector-sub">No transactions found.</div>` : ""}
+        ${vm.etrade.hasTransactions ? `
+        <div class="tx-table">
+          <div class="tx-row tx-head">
+            <div>Date</div><div>Type</div><div>Ticker</div><div class="right">Qty</div><div class="right">Price</div><div class="right">Amount</div>
+          </div>
+          ${vm.etrade.transactionRows.map(t => `
+          <div class="tx-row" title="${escAttr(t.account)}">
+            <div>${esc(t.date)}</div><div>${esc(t.type)}</div><div>${esc(t.ticker)}</div><div class="right mono">${esc(t.qty)}</div><div class="right mono">${esc(t.price)}</div><div class="right mono">${esc(t.amount)}</div>
+          </div>`).join("")}
+        </div>` : ""}
+      </div>` : ""}
       ${!vm.etrade.reachable && vm.etrade.checked ? `<div class="connector-sub">Positions you sync land in a "Connected — E*TRADE" section below, editable like any other position.</div>` : ""}
       <div class="key-row">
         <span class="key-label">Track another account by hand (no login needed):</span>
@@ -1363,6 +1412,7 @@ PortfolioApp.prototype.attachEvents = function () {
       case "submit-etrade-verifier": this.submitEtradeVerifier(); break;
       case "sync-etrade": this.syncEtrade(); break;
       case "disconnect-etrade": this.disconnectEtrade(); break;
+      case "toggle-etrade-transactions": this.toggleEtradeTransactions(); break;
       case "cancel-import": this.cancelImport(); break;
       case "commit-import": this.commitImport(); break;
       case "set-group": this.setGroupFilter(el.dataset.group); break;
