@@ -853,12 +853,13 @@ class PortfolioApp {
   }
   discoverGroupNames() {
     const deleted = this.state.deleted;
-    const entries = SEED.map((r, n) => [r[0], "s" + n])
-      .concat(this.state.imported.map((l, n) => ["Imported — " + l.file, "i" + n]))
+    const accountEntries = this.state.imported.map((l, n) => ["Imported — " + l.file, "i" + n])
       .concat(this.state.custom.map((l, n) => [l.group, "c" + n]));
+    const seedEntries = SEED.map((r, n) => [r[0], "s" + n]);
     const names = [];
-    entries.forEach(([g, key]) => { if (!deleted[key] && names.indexOf(g) < 0) names.push(g); });
+    accountEntries.forEach(([g, key]) => { if (!deleted[key] && names.indexOf(g) < 0) names.push(g); });
     this.state.extraGroups.forEach(g => { if (names.indexOf(g) < 0) names.push(g); });
+    seedEntries.forEach(([g, key]) => { if (!deleted[key] && names.indexOf(g) < 0) names.push(g); });
     return names;
   }
   rowKeysForGroup(group) {
@@ -1027,9 +1028,12 @@ class PortfolioApp {
       });
 
     const isWatch = g => g.indexOf("Watchlist") === 0;
+    const seedGroupSet = {};
+    SEED.forEach(r => { seedGroupSet[r[0]] = true; });
     const groupNames = [];
-    all.forEach(l => { if (groupNames.indexOf(l.group) < 0) groupNames.push(l.group); });
+    all.forEach(l => { if (!seedGroupSet[l.group] && groupNames.indexOf(l.group) < 0) groupNames.push(l.group); });
     this.state.extraGroups.forEach(g => { if (groupNames.indexOf(g) < 0) groupNames.push(g); });
+    all.forEach(l => { if (seedGroupSet[l.group] && groupNames.indexOf(l.group) < 0) groupNames.push(l.group); });
     const orderedNames = this.orderedGroupNames(groupNames);
 
     const counted = all.filter(l => !isWatch(l.group));
