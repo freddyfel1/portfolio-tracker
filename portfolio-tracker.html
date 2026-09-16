@@ -1393,6 +1393,12 @@ function template(vm) {
       </div>` : ""}
       ${vm.etrade.error ? `<div class="error-text">${esc(vm.etrade.error)}</div>` : ""}
       ${!vm.etrade.reachable && vm.etrade.checked ? `<div class="connector-sub">Positions you sync land in a "Connected — E*TRADE" section below, editable like any other position.</div>` : ""}
+      <div class="key-row">
+        <span class="key-label">Track another account by hand (no login needed):</span>
+        <input type="text" class="field key-input" value="${escAttr(vm.newSectionDraft)}" data-action="new-section-draft" placeholder="Account name, e.g. Fidelity IRA">
+        <button class="btn-gold" data-action="add-section">+ Add account</button>
+      </div>
+      ${vm.newSectionError ? `<div class="error-text">${esc(vm.newSectionError)}</div>` : ""}
     </div>
   </section>
 
