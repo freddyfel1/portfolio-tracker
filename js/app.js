@@ -440,7 +440,8 @@ class PortfolioApp {
         if (!res.ok) { if (res.status === 401 || res.status === 403) error = "key rejected"; throw new Error(String(res.status)); }
         const json = await res.json();
         const n = parseFloat(json && json.c);
-        if (isFinite(n) && n > 0) got[t] = n; else failed.push(t);
+        if (isFinite(n) && n > 0) got[t] = n;
+        else { failed.push(t); if (!error) error = "no quote data for this plan/ticker"; }
       } catch (e) { failed.push(t); if (!error) error = e && e.message ? e.message : "failed"; }
     }));
     return { got, failed, error: Object.keys(got).length ? "" : error };
