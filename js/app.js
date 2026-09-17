@@ -519,18 +519,6 @@ class PortfolioApp {
 
   /* ---------- actions (dispatched from delegated events) ---------- */
   setTheme(mode) { this.state.theme = mode; this.persist(); this.render(); }
-  resetPrices() {
-    try { localStorage.removeItem(KEY); } catch (e) {}
-    if (this.restoreBarTimer) { clearTimeout(this.restoreBarTimer); this.restoreBarTimer = null; }
-    this.state = Object.assign({}, this.state, {
-      prices: Object.assign({}, this.seedPrices),
-      imported: [], custom: [], edits: {}, deleted: {}, drafts: {}, groupDrafts: {},
-      extraGroups: [], groupNames_: {}, savedAt: "—", preview: null, importStatus: "",
-      live: {}, pinned: {}, feedStatus: {}, lastRefresh: "",
-      showRestoreBar: false, groupOrder: []
-    });
-    this.render();
-  }
   toggleAuto() {
     const on = !this.state.auto;
     this.state.auto = on;
@@ -580,10 +568,12 @@ class PortfolioApp {
     this.persist(); this.render();
   }
   deleteSection(name) {
-    if (this.rowKeysForGroup(name).length > 0) return; // safety: only ever remove an empty section
+    const keys = this.rowKeysForGroup(name);
+    keys.forEach(key => { this.state.deleted[key] = true; });
     this.state.extraGroups = this.state.extraGroups.filter(g => g !== name);
     if (this.state.groupOrder) this.state.groupOrder = this.state.groupOrder.filter(g => g !== name);
     if (this.state.groupNames_ && name in this.state.groupNames_) delete this.state.groupNames_[name];
+    if (keys.length > 0) this.armRestoreBar();
     this.persist(); this.render();
   }
   toggleWatchlist() { this.state.watchlist = !this.state.watchlist; this.render(); }
@@ -836,9 +826,8 @@ class PortfolioApp {
       if (missing) note += " · " + missing + " needs price";
       const gd = Object.assign({ ticker: "", qty: "", buy: "", buyDate: "", price: "", error: "" }, this.state.groupDrafts[g]);
       const displayName = this.state.groupNames_[g] || g;
-      const isEmpty = this.rowKeysForGroup(g).length === 0;
       return {
-        name: g, displayName: displayName, isEmpty: isEmpty,
+        name: g, displayName: displayName,
         shortName: displayName.replace(/^(Crypto|Stocks|Watchlist|Imported)\s*[—-]\s*/, ""),
         canMoveUp: orderIdx > 0, canMoveDown: orderIdx < orderedNames.length - 1,
         color: GROUP_COLORS[g] || IMPORT_COLOR, note: note, draft: gd,
@@ -1111,7 +1100,6 @@ function template(vm) {
         ${vm.themeModes.map(m => `<button class="pill mono${m.active ? " active" : ""}" data-action="set-theme" data-mode="${m.mode}">${esc(m.label)}</button>`).join("")}
       </div>
       <button class="link-btn no-print" data-action="export-pdf">Export PDF</button>
-      <button class="link-btn no-print" data-action="reset-prices">Reset all edits</button>
       <div class="meta">${vm.lotCount} lots<br>edited ${esc(vm.savedAt)}</div>
     </div>
   </header>
@@ -1313,7 +1301,7 @@ function template(vm) {
         <span class="cost">cost ${group.cost}</span>
         <span class="value">value ${group.value}</span>
         <span class="${group.plClass}">${group.pl} · ${group.ret}</span>
-        ${group.isEmpty ? `<button class="del-btn" title="Remove this empty section" data-action="delete-section" data-group="${escAttr(group.name)}">×</button>` : ""}
+        <button class="del-btn" title="Remove this entire section" data-action="delete-section" data-group="${escAttr(group.name)}">×</button>
       </div>
     </div>
 
@@ -1389,7 +1377,7 @@ function template(vm) {
       <li>Positions and cost bases come from the <strong>Investments (Clean)</strong> sheet of your tracker. One price per ticker: the feed or your edit applies to every lot of that asset.</li>
       <li>Live prices are fetched by your browser: Coinbase's public spot endpoint for crypto, CoinGecko as fallback for small-cap tokens Coinbase has no pair for, and Finnhub for stocks and ETFs once you add a free key. A green price border means live; gold means pinned by you. Treat all of it as indicative, not as a broker statement.</li>
       <li>Gold tracks <strong>PAXG</strong>, a tokenised troy-ounce claim — a spot-gold proxy, not an Apmex bullion quote, and it typically prints a little under retail. <strong>Silver stays manual</strong>: no keyless silver feed is reachable from a browser.</li>
-      <li>Quantity and buy price are editable per lot; <strong>×</strong> removes a position and a restore bar appears so a mis-click is recoverable. Edits, deletions and imports save in this browser and survive a reload — <strong>Reset all edits</strong> returns everything to the spreadsheet values.</li>
+      <li>Quantity and buy price are editable per lot; <strong>×</strong> on a row removes that position, and <strong>×</strong> on a section's totals removes every position in it at once — either way a restore bar appears so a mis-click is recoverable. Edits, deletions and imports save in this browser and survive a reload.</li>
       <li>Linqto positions (Ripple, Polysign) are marked at <strong>$0</strong> — the spreadsheet notes Linqto filed for bankruptcy. That is a placeholder, not a recovery estimate.</li>
       <li>Several prices in the sheet were broken lookups (VET, PEPE, XCN, ALGO at 0; Cristina's XRP at $0.02 against $1.42 in the main wallet). The live feed now supplies those, so they price like every other lot. Anything with no source at all — silver, COPI, imported rows without a price column — is flagged <strong>needs price</strong> and stays out of allocation until you type one.</li>
       <li>Realized P/L is not carried over — the clean sheet records $0 realized to date.</li>
@@ -1409,7 +1397,6 @@ PortfolioApp.prototype.attachEvents = function () {
     const action = el.dataset.action;
     switch (action) {
       case "set-theme": this.setTheme(el.dataset.mode); break;
-      case "reset-prices": this.resetPrices(); break;
       case "export-pdf": window.print(); break;
       case "set-interval": this.setInterval_(parseInt(el.dataset.ms, 10)); break;
       case "refresh-now": this.refresh(); break;
