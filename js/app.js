@@ -579,8 +579,8 @@ class PortfolioApp {
   }
   toggleWatchlist() { this.state.watchlist = !this.state.watchlist; this.render(); }
   toggleHideZero() { this.state.hideZero = !this.state.hideZero; this.render(); }
-  setDateFrom(text) { this.state.dateFrom = text; this.render(); }
-  setDateTo(text) { this.state.dateTo = text; this.render(); }
+  setDateFrom(text) { this.state.dateFrom = text; }
+  setDateTo(text) { this.state.dateTo = text; }
   clearDateFilter() { this.state.dateFrom = ""; this.state.dateTo = ""; this.render(); }
   restoreDeleted() {
     this.state.deleted = {};
@@ -690,12 +690,10 @@ class PortfolioApp {
   editBuyDate(key, text) {
     this.state.edits[key] = Object.assign({}, this.state.edits[key], { buyDate: text });
     this.persist();
-    this.render();
   }
   editSellDate(key, text) {
     this.state.edits[key] = Object.assign({}, this.state.edits[key], { sellDate: text });
     this.persist();
-    this.render();
   }
   editTicker(key, text) {
     this.state.drafts["tk" + key] = text;
@@ -729,7 +727,7 @@ class PortfolioApp {
     const gd = Object.assign({ ticker: "", qty: "", buy: "", buyDate: "", price: "", error: "" }, this.state.groupDrafts[group]);
     gd[field] = text;
     this.state.groupDrafts[group] = gd;
-    this.render();
+    if (field !== "buyDate") this.render();
   }
   groupDraftAdd(group) {
     const gd = Object.assign({ ticker: "", qty: "", buy: "", buyDate: "", price: "", error: "" }, this.state.groupDrafts[group]);
@@ -1532,6 +1530,13 @@ PortfolioApp.prototype.attachEvents = function () {
     const el = e.target.closest("[data-action]");
     if (!el) return;
     if (el.dataset.action === "ticker-search") this.setTickerSearch(el.value);
+  });
+
+  const DATE_FIELD_ACTIONS = ["edit-buy-date", "edit-sell-date", "draft-buy-date", "date-from", "date-to"];
+  root.addEventListener("focusout", e => {
+    const el = e.target.closest("[data-action]");
+    if (!el) return;
+    if (DATE_FIELD_ACTIONS.indexOf(el.dataset.action) > -1) this.render();
   });
 
   root.addEventListener("dragover", e => {
