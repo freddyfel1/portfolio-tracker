@@ -242,15 +242,28 @@ async function fetchAllTransactions(accessToken, accessSecret) {
 
 /* ---------- tiny HTTP API for the tracker's browser page ---------- */
 
-function withCors(res) {
-  res.setHeader("Access-Control-Allow-Origin", "*");
-  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+// Only the tracker's own page may talk to this server: a wildcard/echoed origin here would
+// let ANY website's JS (an ad, an iframe, any open tab) silently read live E*TRADE positions
+// and transactions from this endpoint, or CSRF /etrade/connect and /etrade/disconnect, just
+// because the bridge happens to be running on the same machine. The tracker is only ever
+// opened as a local file (Origin: "null") or via a local static server (localhost/127.0.0.1,
+// any port) — nothing else is a legitimate caller.
+const ALLOWED_ORIGIN_RE = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/;
+
+function isAllowedOrigin(origin) {
+  return origin === "null" || (!!origin && ALLOWED_ORIGIN_RE.test(origin));
 }
 
-function sendJson(res, status, obj) {
+function withCors(res, origin) {
+  res.setHeader("Access-Control-Allow-Origin", origin);
+  res.setHeader("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader("Vary", "Origin");
+}
+
+function sendJson(res, status, obj, origin) {
   const body = JSON.stringify(obj);
-  withCors(res);
+  if (origin) withCors(res, origin);
   res.writeHead(status, { "Content-Type": "application/json", "Content-Length": Buffer.byteLength(body) });
   res.end(body);
 }
@@ -264,13 +277,27 @@ function readBody(req) {
 }
 
 const server = http.createServer(async (req, res) => {
-  if (req.method === "OPTIONS") { withCors(res); res.writeHead(204); return res.end(); }
+  const origin = req.headers.origin;
+  // Checked before any route runs, not just when deciding the response's CORS header — a
+  // wildcard/echoed CORS header only stops the browser from letting the CALLING page's JS
+  // read the response, it does not stop the request itself from being sent and processed.
+  // A plain cross-origin POST (e.g. /etrade/disconnect, /etrade/connect) is a "simple
+  // request" with no preflight, so it would still execute server-side and log the user out
+  // or clobber a pending OAuth handshake even with a correct CORS header. Rejecting the
+  // request outright, before it does anything, is what actually stops that.
+  if (!isAllowedOrigin(origin)) {
+    res.writeHead(403, { "Content-Type": "application/json" });
+    return res.end(JSON.stringify({ error: "Origin not allowed." }));
+  }
 
+  if (req.method === "OPTIONS") { withCors(res, origin); res.writeHead(204); return res.end(); }
+
+  const send = (status, obj) => sendJson(res, status, obj, origin);
   const u = new URL(req.url, "http://localhost");
   try {
     if (u.pathname === "/etrade/status") {
       const s = loadSession();
-      return sendJson(res, 200, { ok: true, environment: ENVIRONMENT, connected: !!(s.accessToken && s.accessSecret) });
+      return send(200, { ok: true, environment: ENVIRONMENT, connected: !!(s.accessToken && s.accessSecret) });
     }
 
     if (u.pathname === "/etrade/connect" && req.method === "POST") {
@@ -280,44 +307,44 @@ const server = http.createServer(async (req, res) => {
       session.requestSecret = rt.secret;
       saveSession(session);
       const authorizeUrl = "https://us.etrade.com/e/t/etws/authorize?key=" + encodeURIComponent(CONSUMER_KEY) + "&token=" + encodeURIComponent(rt.token);
-      return sendJson(res, 200, { authorizeUrl });
+      return send(200, { authorizeUrl });
     }
 
     if (u.pathname === "/etrade/verify" && req.method === "POST") {
       const body = JSON.parse((await readBody(req)) || "{}");
       const session = loadSession();
-      if (!session.requestToken) return sendJson(res, 400, { error: "No pending connection — click Connect again." });
+      if (!session.requestToken) return send(400, { error: "No pending connection — click Connect again." });
       const at = await getAccessToken(session.requestToken, session.requestSecret, body.verifier || "");
       session.accessToken = at.token;
       session.accessSecret = at.secret;
       delete session.requestToken;
       delete session.requestSecret;
       saveSession(session);
-      return sendJson(res, 200, { connected: true });
+      return send(200, { connected: true });
     }
 
     if (u.pathname === "/etrade/disconnect" && req.method === "POST") {
       saveSession({});
-      return sendJson(res, 200, { connected: false });
+      return send(200, { connected: false });
     }
 
     if (u.pathname === "/etrade/portfolio" && req.method === "GET") {
       const session = loadSession();
-      if (!session.accessToken) return sendJson(res, 401, { error: "Not connected." });
+      if (!session.accessToken) return send(401, { error: "Not connected." });
       const positions = await fetchAllPositions(session.accessToken, session.accessSecret);
-      return sendJson(res, 200, { positions });
+      return send(200, { positions });
     }
 
     if (u.pathname === "/etrade/transactions" && req.method === "GET") {
       const session = loadSession();
-      if (!session.accessToken) return sendJson(res, 401, { error: "Not connected." });
+      if (!session.accessToken) return send(401, { error: "Not connected." });
       const transactions = await fetchAllTransactions(session.accessToken, session.accessSecret);
-      return sendJson(res, 200, { transactions });
+      return send(200, { transactions });
     }
 
-    return sendJson(res, 404, { error: "Unknown endpoint." });
+    return send(404, { error: "Unknown endpoint." });
   } catch (e) {
-    return sendJson(res, 500, { error: e && e.message ? e.message : "Unexpected error." });
+    return send(500, { error: e && e.message ? e.message : "Unexpected error." });
   }
 });
 
