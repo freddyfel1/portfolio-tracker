@@ -563,6 +563,8 @@ class PortfolioApp {
       showRestoreBar: false,
       apiKey: saved.apiKey || "",
       keyDraft: saved.apiKey || "",
+      geckoApiKey: saved.geckoApiKey || "",
+      geckoKeyDraft: saved.geckoApiKey || "",
       lastRefresh: saved.lastRefresh || "",
       savedAt: saved.at || "—",
       group: "All",
@@ -633,6 +635,7 @@ class PortfolioApp {
       imported: this.state.imported, edits: this.state.edits, deleted: this.state.deleted,
       live: this.state.live, pinned: this.state.pinned, auto: this.state.auto, intervalMs: this.state.intervalMs,
       feedStatus: this.state.feedStatus, lastRefresh: this.state.lastRefresh, apiKey: this.state.apiKey,
+      geckoApiKey: this.state.geckoApiKey,
       theme: this.state.theme, custom: this.state.custom, extraGroups: this.state.extraGroups,
       groupNames_: this.state.groupNames_, groupOrder: this.state.groupOrder, rowOrder: this.state.rowOrder, at: at
     };
@@ -694,13 +697,18 @@ class PortfolioApp {
     return { got, failed };
   }
 
-  async fetchGecko(tickers) {
+  async fetchGecko(tickers, key) {
     const list = tickers.filter(t => GECKO_IDS[t]);
     if (!list.length) return { got: {}, failed: [], attempted: 0 };
     const ids = list.map(t => GECKO_IDS[t]);
     try {
-      const res = await fetch("https://api.coingecko.com/api/v3/simple/price?ids=" + ids.join(",") + "&vs_currencies=usd", { cache: "no-store" });
-      if (!res.ok) throw new Error(String(res.status));
+      let url = "https://api.coingecko.com/api/v3/simple/price?ids=" + ids.join(",") + "&vs_currencies=usd";
+      // A query param, not a custom header, so this stays a CORS "simple request" — a custom
+      // header would trigger a preflight OPTIONS request, which a file:// page's null origin
+      // may not clear even with a valid key.
+      if (key) url += "&x_cg_demo_api_key=" + encodeURIComponent(key);
+      const res = await fetch(url, { cache: "no-store" });
+      if (!res.ok) { if (res.status === 429) throw new Error("rate limited"); throw new Error(String(res.status)); }
       const json = await res.json();
       const got = {}, failed = [];
       list.forEach(t => {
@@ -744,7 +752,7 @@ class PortfolioApp {
     const eq = needed.filter(t => !FEED_MAP[t] || FEED_MAP[t][0] === "finnhub");
     const stamp = new Date().toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit", second: "2-digit" });
     const [cbRes, eqRes] = await Promise.all([this.fetchCoinbase(cb), this.fetchFinnhub(eq, this.state.apiKey)]);
-    const gkRes = await this.fetchGecko(cbRes.failed);
+    const gkRes = await this.fetchGecko(cbRes.failed, this.state.geckoApiKey);
     const live = this.state.live;
     const apply = (res, source) => {
       Object.keys(res.got).forEach(t => {
@@ -828,6 +836,13 @@ class PortfolioApp {
     this.refresh();
   }
   clearKey() { this.state.keyDraft = ""; this.state.apiKey = ""; this.persist(); this.render(); }
+  onGeckoKeyDraftChange(text) { this.state.geckoKeyDraft = text; this.render(); }
+  saveGeckoKey() {
+    this.state.geckoApiKey = (this.state.geckoKeyDraft || "").trim();
+    this.persist(); this.render();
+    this.refresh();
+  }
+  clearGeckoKey() { this.state.geckoKeyDraft = ""; this.state.geckoApiKey = ""; this.persist(); this.render(); }
   unpinAll() { this.state.pinned = {}; this.persist(); this.render(); this.refresh(); }
   unpinTicker(ticker) { delete this.state.pinned[ticker]; this.persist(); this.render(); this.refresh(); }
   setDragging(on) { if (this.state.dragging !== on) { this.state.dragging = on; this.render(); } }
@@ -1238,6 +1253,10 @@ class PortfolioApp {
       keyStatus: this.state.apiKey ? "Key saved in this browser only." : "finnhub.io/register issues a free key in about a minute.",
       keyButtonLabel: this.state.apiKey ? "Replace key" : "Save key",
       hasKey: !!this.state.apiKey,
+      geckoKeyDraft: this.state.geckoKeyDraft,
+      geckoKeyStatus: this.state.geckoApiKey ? "Key saved in this browser only — 100 requests/min instead of the shared free pool." : "Optional — CoinGecko's free pool is shared and easily rate-limited. A free Demo key (coingecko.com/en/developers/dashboard) fixes that.",
+      geckoKeyButtonLabel: this.state.geckoApiKey ? "Replace key" : "Save key",
+      hasGeckoKey: !!this.state.geckoApiKey,
       hasPinned: pinnedList.length > 0,
       pinnedLabel: pinnedList.length + " ticker" + (pinnedList.length === 1 ? "" : "s") + " (" + pinnedList.slice(0, 6).join(", ") + (pinnedList.length > 6 ? "…" : "") + ")",
       newSectionDraft: this.state.newSectionDraft,
@@ -1445,6 +1464,13 @@ function template(vm) {
         <button class="btn-gold" data-action="save-key">${esc(vm.keyButtonLabel)}</button>
         ${vm.hasKey ? `<button class="btn-ghost" data-action="clear-key">Remove</button>` : ""}
         <span class="key-status">${esc(vm.keyStatus)}</span>
+      </div>
+      <div class="key-row">
+        <span class="key-label">CoinGecko fallback</span>
+        <input type="password" class="field key-input" value="${escAttr(vm.geckoKeyDraft)}" data-action="gecko-key-draft" placeholder="CoinGecko Demo API key (optional)">
+        <button class="btn-gold" data-action="save-gecko-key">${esc(vm.geckoKeyButtonLabel)}</button>
+        ${vm.hasGeckoKey ? `<button class="btn-ghost" data-action="clear-gecko-key">Remove</button>` : ""}
+        <span class="key-status">${esc(vm.geckoKeyStatus)}</span>
       </div>
       ${vm.hasPinned ? `
       <div class="pinned-bar">
@@ -1707,6 +1733,8 @@ PortfolioApp.prototype.attachEvents = function () {
       case "refresh-now": this.refresh(); break;
       case "save-key": this.saveKey(); break;
       case "clear-key": this.clearKey(); break;
+      case "save-gecko-key": this.saveGeckoKey(); break;
+      case "clear-gecko-key": this.clearGeckoKey(); break;
       case "unpin-all": this.unpinAll(); break;
       case "unpin-ticker": this.unpinTicker(el.dataset.ticker); break;
       case "connect-etrade": this.connectEtrade(); break;
@@ -1786,6 +1814,13 @@ PortfolioApp.prototype.attachEvents = function () {
       if (saveBtn) saveBtn.click();
     }
 
+    if (action === "gecko-key-draft") {
+      e.preventDefault();
+      el.blur();
+      const saveBtn = root.querySelector('[data-action="save-gecko-key"]');
+      if (saveBtn) saveBtn.click();
+    }
+
     if (action === "etrade-verifier-draft") {
       e.preventDefault();
       el.blur();
@@ -1806,6 +1841,7 @@ PortfolioApp.prototype.attachEvents = function () {
       case "date-to": this.setDateTo(el.value); break;
       case "etrade-verifier-draft": this.setEtradeVerifierDraft(el.value); break;
       case "key-draft": this.onKeyDraftChange(el.value); break;
+      case "gecko-key-draft": this.onGeckoKeyDraftChange(el.value); break;
       case "new-section-draft": this.onNewSectionDraftChange(el.value); break;
       case "rename-group": this.renameGroup(el.dataset.group, el.value); break;
       case "edit-qty": this.editQty(el.dataset.key, el.value); break;
