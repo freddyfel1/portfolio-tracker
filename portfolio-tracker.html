@@ -371,7 +371,22 @@ function priceMoney(n) {
 function plClass(n) { return n > 0.005 ? "pl-pos" : (n < -0.005 ? "pl-neg" : "pl-flat"); }
 function num(v) {
   if (v === null || v === undefined) return NaN;
-  return parseFloat(String(v).replace(/[$,%\s]/g, "").replace(/[()]/g, ""));
+  let s = String(v).replace(/[$%\s]/g, "");
+  // Accounting-style negatives: "(123.45)" means -123.45, not 123.45 — stripping the
+  // parens without negating (the old behavior) silently flipped the sign.
+  const negParen = /^\(.*\)$/.test(s);
+  if (negParen) s = s.slice(1, -1);
+  const commaCount = (s.match(/,/g) || []).length;
+  if (s.indexOf(".") === -1 && commaCount === 1 && /,\d{1,2}$/.test(s)) {
+    // A lone comma followed by 1-2 digits, with no decimal point anywhere else, reads as a
+    // locale decimal comma ("1234,56"), not US thousands grouping ("1,234") — unconditionally
+    // stripping it (the old behavior) turned it into a 100x-1000x magnitude error.
+    s = s.replace(",", ".");
+  } else {
+    s = s.replace(/,/g, "");
+  }
+  const n = parseFloat(s);
+  return negParen ? -n : n;
 }
 function esc(s) {
   return String(s === undefined || s === null ? "" : s)
@@ -436,7 +451,14 @@ async function xlsxToRows(file) {
 }
 
 function csvToRows(text) {
-  const delim = text.indexOf("\t") > -1 && text.indexOf(",") < 0 ? "\t" : ",";
+  // Sniff the delimiter from the header row alone, not the whole file — a genuine .tsv
+  // export with even one comma anywhere in its data (a thousands-separated number, a
+  // description field) used to flip the entire file to comma-delimited parsing, leaving
+  // literal tabs stuck inside oversized "cells" instead of splitting on them.
+  const firstLine = text.split(/\r?\n/, 1)[0] || "";
+  const tabCount = (firstLine.match(/\t/g) || []).length;
+  const commaCount = (firstLine.match(/,/g) || []).length;
+  const delim = tabCount > commaCount ? "\t" : ",";
   const rows = [];
   let row = [], cell = "", q = false;
   for (let i = 0; i < text.length; i++) {
@@ -561,6 +583,9 @@ class PortfolioApp {
         showTransactions: false, transactions: [], transactionsLoading: false, transactionsError: ""
       }
     };
+    // Ephemeral, not persisted: which keys the current 10s undo window can still restore.
+    // Once that window closes (see armRestoreBar), those deletions are permanent.
+    this.pendingDeleteKeys = [];
     this.render();
     this.attachEvents();
     this.mount();
@@ -611,8 +636,15 @@ class PortfolioApp {
       theme: this.state.theme, custom: this.state.custom, extraGroups: this.state.extraGroups,
       groupNames_: this.state.groupNames_, groupOrder: this.state.groupOrder, rowOrder: this.state.rowOrder, at: at
     };
-    try { localStorage.setItem(KEY, JSON.stringify(payload)); } catch (e) {}
-    this.state.savedAt = at;
+    // savedAt must only advance on an actual successful write — otherwise a quota-exceeded
+    // or private-browsing localStorage failure looks identical to a normal save in the
+    // "edited ..." label, and the edit is silently lost on the next reload with no warning.
+    try {
+      localStorage.setItem(KEY, JSON.stringify(payload));
+      this.state.savedAt = at;
+    } catch (e) {
+      this.state.savedAt = "save failed — " + (e && e.message ? e.message : "storage error");
+    }
   }
 
   mount() {
@@ -704,8 +736,13 @@ class PortfolioApp {
     if (this.state.refreshing) return;
     this.state.refreshing = true; this.render();
     const needed = this.neededTickers();
+    // A ticker with no FEED_MAP entry defaults to the free, keyless Coinbase->CoinGecko
+    // chain, not Finnhub — Finnhub only ever gets queried for tickers explicitly mapped to
+    // it. Defaulting unmapped tickers to *both* wasted a rate-limited Finnhub call on every
+    // refresh for something that could never resolve there, and could clobber a real
+    // Finnhub error (e.g. "key rejected") with the generic failure from that bogus lookup.
     const cb = needed.filter(t => !FEED_MAP[t] || FEED_MAP[t][0] === "coinbase");
-    const eq = needed.filter(t => !FEED_MAP[t] || FEED_MAP[t][0] === "finnhub");
+    const eq = needed.filter(t => FEED_MAP[t] && FEED_MAP[t][0] === "finnhub");
     const stamp = new Date().toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit", second: "2-digit" });
     const [cbRes, eqRes] = await Promise.all([this.fetchCoinbase(cb), this.fetchFinnhub(eq, this.state.apiKey)]);
     const gkRes = await this.fetchGecko(cbRes.failed);
@@ -827,7 +864,7 @@ class PortfolioApp {
     this.state.extraGroups = this.state.extraGroups.filter(g => g !== name);
     if (this.state.groupOrder) this.state.groupOrder = this.state.groupOrder.filter(g => g !== name);
     if (this.state.groupNames_ && name in this.state.groupNames_) delete this.state.groupNames_[name];
-    if (keys.length > 0) this.armRestoreBar();
+    if (keys.length > 0) this.armRestoreBar(keys);
     this.persist(); this.render();
   }
   toggleWatchlist() { this.state.watchlist = !this.state.watchlist; this.render(); }
@@ -836,17 +873,26 @@ class PortfolioApp {
   setDateTo(text) { this.state.dateTo = text; }
   clearDateFilter() { this.state.dateFrom = ""; this.state.dateTo = ""; this.render(); }
   restoreDeleted() {
-    this.state.deleted = {};
+    // Only undoes what's still within the current 10s window — `pendingDeleteKeys` never
+    // includes anything from a batch whose timer already fired, so this can't resurrect a
+    // long-ago deletion just because the user deletes something new later.
+    this.pendingDeleteKeys.forEach(key => { delete this.state.deleted[key]; });
+    this.pendingDeleteKeys = [];
     this.state.showRestoreBar = false;
     if (this.restoreBarTimer) { clearTimeout(this.restoreBarTimer); this.restoreBarTimer = null; }
     this.persist(); this.render();
   }
-  armRestoreBar() {
+  armRestoreBar(keys) {
+    // Starts a fresh undoable batch unless the bar is already showing (another delete
+    // within the same 10s window extends the same batch instead of starting a new one).
+    if (!this.restoreBarTimer) this.pendingDeleteKeys = [];
+    this.pendingDeleteKeys = this.pendingDeleteKeys.concat(keys || []);
     this.state.showRestoreBar = true;
     if (this.restoreBarTimer) clearTimeout(this.restoreBarTimer);
     this.restoreBarTimer = setTimeout(() => {
       this.state.showRestoreBar = false;
       this.restoreBarTimer = null;
+      this.pendingDeleteKeys = [];
       this.render();
     }, 10000);
   }
@@ -949,11 +995,16 @@ class PortfolioApp {
     this.persist();
   }
   editTicker(key, text) {
-    this.state.drafts["tk" + key] = text;
     const t = text.trim().toUpperCase();
     if (t) {
+      this.state.drafts["tk" + key] = text;
       this.state.edits[key] = Object.assign({}, this.state.edits[key], { ticker: t });
       this.persist();
+    } else {
+      // Reject an empty ticker rather than silently keeping the old one underneath while
+      // the input visibly shows blank — clearing the draft re-renders the field from the
+      // row's real (unchanged) ticker instead of a misleading blank box.
+      delete this.state.drafts["tk" + key];
     }
     this.render();
   }
@@ -975,7 +1026,7 @@ class PortfolioApp {
     }
     this.render();
   }
-  deleteRow(key) { this.state.deleted[key] = true; this.armRestoreBar(); this.persist(); this.render(); }
+  deleteRow(key) { this.state.deleted[key] = true; this.armRestoreBar([key]); this.persist(); this.render(); }
   groupDraftChange(group, field, text) {
     const gd = Object.assign({ ticker: "", qty: "", buy: "", buyDate: "", price: "", error: "" }, this.state.groupDrafts[group]);
     gd[field] = text;
@@ -1192,8 +1243,11 @@ class PortfolioApp {
       pinnedLabel: pinnedList.length + " ticker" + (pinnedList.length === 1 ? "" : "s") + " (" + pinnedList.slice(0, 6).join(", ") + (pinnedList.length > 6 ? "…" : "") + ")",
       newSectionDraft: this.state.newSectionDraft,
       newSectionError: this.state.newSectionError,
-      hasDeleted: this.state.showRestoreBar && Object.keys(deleted).length > 0,
-      deletedLabel: Object.keys(deleted).length + " position" + (Object.keys(deleted).length === 1 ? "" : "s"),
+      // Counts only the current undoable batch, not every deletion ever made — otherwise,
+      // once an earlier batch's window had already closed, this would claim "Restore all"
+      // brings back more positions than it actually can (or silently would, pre-fix).
+      hasDeleted: this.state.showRestoreBar && this.pendingDeleteKeys.length > 0,
+      deletedLabel: this.pendingDeleteKeys.length + " position" + (this.pendingDeleteKeys.length === 1 ? "" : "s"),
       tickerSearch: this.state.tickerSearch,
       dateFrom: this.state.dateFrom,
       dateTo: this.state.dateTo,
