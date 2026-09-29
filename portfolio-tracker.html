@@ -664,7 +664,7 @@ class PortfolioApp {
 
   async fetchGecko(tickers) {
     const list = tickers.filter(t => GECKO_IDS[t]);
-    if (!list.length) return { got: {}, failed: tickers.slice() };
+    if (!list.length) return { got: {}, failed: [], attempted: 0 };
     const ids = list.map(t => GECKO_IDS[t]);
     try {
       const res = await fetch("https://api.coingecko.com/api/v3/simple/price?ids=" + ids.join(",") + "&vs_currencies=usd", { cache: "no-store" });
@@ -676,9 +676,9 @@ class PortfolioApp {
         if (isFinite(n)) got[t] = n; else failed.push(t);
       });
       tickers.filter(t => !GECKO_IDS[t]).forEach(t => failed.push(t));
-      return { got, failed };
+      return { got, failed, attempted: list.length };
     } catch (e) {
-      return { got: {}, failed: tickers.slice(), error: e && e.message ? e.message : "blocked" };
+      return { got: {}, failed: tickers.slice(), error: e && e.message ? e.message : "blocked", attempted: list.length };
     }
   }
 
@@ -721,7 +721,7 @@ class PortfolioApp {
     apply(eqRes, "finnhub");
     this.state.feedStatus = {
       coinbase: { ok: Object.keys(cbRes.got).length, total: cb.length, failed: cbRes.failed.filter(t => !gkRes.got[t]), rescued: cbRes.failed.filter(t => gkRes.got[t]), error: "", at: stamp },
-      coingecko: { ok: Object.keys(gkRes.got).length, total: cbRes.failed.length, failed: gkRes.failed, error: gkRes.error || "", at: stamp },
+      coingecko: { ok: Object.keys(gkRes.got).length, total: gkRes.attempted || 0, failed: gkRes.failed, error: gkRes.error || "", at: stamp },
       finnhub: { ok: Object.keys(eqRes.got).length, total: eq.length, failed: eqRes.failed, error: eqRes.error || "", needsKey: !!eqRes.needsKey, at: stamp }
     };
     this.state.refreshing = false;
