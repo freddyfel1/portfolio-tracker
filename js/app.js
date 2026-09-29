@@ -483,13 +483,12 @@ class PortfolioApp {
     if (this.state.refreshing) return;
     this.state.refreshing = true; this.render();
     const needed = this.neededTickers();
-    // A ticker with no FEED_MAP entry defaults to the free, keyless Coinbase->CoinGecko
-    // chain, not Finnhub — Finnhub only ever gets queried for tickers explicitly mapped to
-    // it. Defaulting unmapped tickers to *both* wasted a rate-limited Finnhub call on every
-    // refresh for something that could never resolve there, and could clobber a real
-    // Finnhub error (e.g. "key rejected") with the generic failure from that bogus lookup.
+    // A ticker with no FEED_MAP entry could be either a crypto symbol Coinbase/CoinGecko
+    // cover or a stock/ETF Finnhub covers — fetchFinnhub resolves it by its raw ticker
+    // string when there's no explicit mapping, so unmapped tickers are tried on both and
+    // whichever feed actually recognizes it wins.
     const cb = needed.filter(t => !FEED_MAP[t] || FEED_MAP[t][0] === "coinbase");
-    const eq = needed.filter(t => FEED_MAP[t] && FEED_MAP[t][0] === "finnhub");
+    const eq = needed.filter(t => !FEED_MAP[t] || FEED_MAP[t][0] === "finnhub");
     const stamp = new Date().toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit", second: "2-digit" });
     const [cbRes, eqRes] = await Promise.all([this.fetchCoinbase(cb), this.fetchFinnhub(eq, this.state.apiKey)]);
     const gkRes = await this.fetchGecko(cbRes.failed);
